@@ -1,6 +1,6 @@
 """
-S3 写入器模块
-负责将扫描结果 JSON 报告写入到 S3 存储桶
+S3 Writer Module
+Responsible for writing scan result JSON reports to S3 bucket
 """
 import json
 import boto3
@@ -12,15 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class S3Writer:
-    """S3 写入器类"""
+    """S3 writer class"""
     
     def __init__(self, bucket_name: str, region: str = 'us-east-1'):
         """
-        初始化 S3 写入器
+        Initialize S3 writer
         
         Args:
-            bucket_name: S3 存储桶名称
-            region: AWS 区域
+            bucket_name: S3 bucket name
+            region: AWS region
         """
         self.bucket_name = bucket_name
         self.region = region
@@ -28,26 +28,26 @@ class S3Writer:
     
     def write_scan_report(self, scan_id: str, report_data: Dict[str, Any]) -> str:
         """
-        将扫描报告写入 S3
+        Write scan report to S3
         
         Args:
-            scan_id: 扫描任务ID
-            report_data: 标准化的扫描报告数据
+            scan_id: Scan task ID
+            report_data: Standardized scan report data
             
         Returns:
-            S3 对象键名
+            S3 object key name
             
         Raises:
-            S3WriteError: S3 写入失败时抛出
+            S3WriteError: Thrown when S3 write fails
         """
         try:
-            # 构造 S3 对象键名：reports/scan-{scan_id}.json
+            # Construct S3 object key name: reports/scan-{scan_id}.json
             s3_key = f"reports/{scan_id}.json"
             
-            # 将报告数据转换为 JSON 字符串
+            # Convert report data to JSON string
             json_content = json.dumps(report_data, indent=2, ensure_ascii=False)
             
-            # 上传到 S3
+            # Upload to S3
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=s3_key,
@@ -61,36 +61,36 @@ class S3Writer:
                 }
             )
             
-            logger.info(f"扫描报告已写入 S3 - bucket: {self.bucket_name}, key: {s3_key}")
+            logger.info(f"Scan report written to S3 - bucket: {self.bucket_name}, key: {s3_key}")
             return s3_key
             
         except NoCredentialsError:
-            error_msg = "AWS 凭证未找到或无效"
+            error_msg = "AWS credentials not found or invalid"
             logger.error(error_msg)
             raise S3WriteError(error_msg)
         except ClientError as e:
             error_code = e.response['Error']['Code']
-            error_msg = f"S3 操作失败 - {error_code}: {e.response['Error']['Message']}"
+            error_msg = f"S3 operation failed - {error_code}: {e.response['Error']['Message']}"
             logger.error(error_msg)
             raise S3WriteError(error_msg)
         except Exception as e:
-            error_msg = f"写入 S3 时发生未知错误: {str(e)}"
+            error_msg = f"Unknown error occurred while writing to S3: {str(e)}"
             logger.error(error_msg)
             raise S3WriteError(error_msg)
     
     def generate_presigned_url(self, s3_key: str, expiration: int = 3600) -> str:
         """
-        生成预签名 URL 供前端下载报告
+        Generate presigned URL for frontend to download report
         
         Args:
-            s3_key: S3 对象键名
-            expiration: URL 过期时间（秒），默认1小时
+            s3_key: S3 object key name
+            expiration: URL expiration time (seconds), default 1 hour
             
         Returns:
-            预签名 URL
+            Presigned URL
             
         Raises:
-            S3WriteError: 生成 URL 失败时抛出
+            S3WriteError: Thrown when URL generation fails
         """
         try:
             presigned_url = self.s3_client.generate_presigned_url(

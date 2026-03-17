@@ -1,6 +1,6 @@
 """
-扫描引擎模块
-负责集成 Bandit（Python 代码扫描）和 Semgrep（Java/JS 代码扫描）
+Scanning Engine Module
+Responsible for integrating Bandit (Python code scanning) and Semgrep (Java/JS code scanning)
 """
 import json
 import os
@@ -15,38 +15,38 @@ logger.setLevel(logging.INFO)
 
 
 class SecurityScanner:
-    """安全扫描器类，整合 Bandit 和 Semgrep"""
+    """Security scanner class, integrating Bandit and Semgrep"""
     
     def __init__(self):
         self.temp_dir = None
     
     def scan_code(self, code: str, language: str, scan_id: str) -> Dict[str, Any]:
         """
-        根据语言类型选择合适的扫描器扫描代码
+        Choose appropriate scanner based on language type to scan code
         
         Args:
-            code: 要扫描的代码内容
-            language: 代码语言 (python, java, javascript)
-            scan_id: 扫描任务ID
+            code: Code content to be scanned
+            language: Code language (python, java, javascript)
+            scan_id: Scan task ID
             
         Returns:
-            包含扫描结果的字典
+            Dictionary containing scan results
         """
         try:
-            # 创建临时目录
+            # Create temporary directory
             with tempfile.TemporaryDirectory() as temp_dir:
                 self.temp_dir = temp_dir
                 
-                # 根据语言选择扫描器
+                # Choose scanner based on language
                 if language.lower() == 'python':
                     return self._scan_with_bandit(code, scan_id)
                 elif language.lower() in ['java', 'javascript', 'js']:
                     return self._scan_with_semgrep(code, language, scan_id)
                 else:
-                    raise ValueError(f"不支持的语言类型: {language}")
+                    raise ValueError(f"Unsupported language type: {language}")
                     
         except Exception as e:
-            logger.error(f"扫描失败 - scan_id: {scan_id}, error: {str(e)}")
+            logger.error(f"Scan failed - scan_id: {scan_id}, error: {str(e)}")
             return {
                 'scan_id': scan_id,
                 'language': language,
@@ -58,48 +58,48 @@ class SecurityScanner:
     
     def _scan_with_bandit(self, code: str, scan_id: str) -> Dict[str, Any]:
         """
-        使用 Bandit 扫描 Python 代码
+        Use Bandit to scan Python code
         
         Args:
-            code: Python 代码内容
-            scan_id: 扫描任务ID
+            code: Python code content
+            scan_id: Scan task ID
             
         Returns:
-            Bandit 扫描结果
+            Bandit scan results
         """
-        logger.info(f"开始 Bandit 扫描 - scan_id: {scan_id}")
+        logger.info(f"Starting Bandit scan - scan_id: {scan_id}")
         
-        # 写入临时 Python 文件
+        # Write temporary Python file
         python_file = os.path.join(self.temp_dir, f"code_{scan_id}.py")
         with open(python_file, 'w', encoding='utf-8') as f:
             f.write(code)
         
         try:
-            # 运行 Bandit 扫描
+            # Run Bandit scan
             cmd = [
                 'bandit',
                 '-r', python_file,
                 '-f', 'json',
-                '--silent'  # 减少输出噪音
+                '--silent'  # Reduce output noise
             ]
             
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5分钟超时
+                timeout=300,  # 5 minute timeout
                 cwd=self.temp_dir
             )
             
-            # Bandit 返回码: 0=无问题, 1=有问题但成功, >=2=错误
+            # Bandit return codes: 0=no issues, 1=has issues but successful, >=2=error
             if result.returncode >= 2:
-                raise RuntimeError(f"Bandit 执行失败: {result.stderr}")
+                raise RuntimeError(f"Bandit execution failed: {result.stderr}")
             
-            # 解析 JSON 结果
+            # Parse JSON results
             if result.stdout.strip():
                 bandit_output = json.loads(result.stdout)
             else:
-                # 没有发现问题
+                # No issues found
                 bandit_output = {
                     "results": [],
                     "metrics": {
@@ -112,7 +112,7 @@ class SecurityScanner:
                     }
                 }
             
-            logger.info(f"Bandit 扫描完成 - scan_id: {scan_id}, 发现问题: {len(bandit_output.get('results', []))}")
+            logger.info(f"Bandit scan completed - scan_id: {scan_id}, issues found: {len(bandit_output.get('results', []))}")
             
             return {
                 'scan_id': scan_id,
@@ -124,27 +124,27 @@ class SecurityScanner:
             }
             
         except subprocess.TimeoutExpired:
-            raise RuntimeError("Bandit 扫描超时")
+            raise RuntimeError("Bandit scan timeout")
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"Bandit 输出解析失败: {str(e)}")
+            raise RuntimeError(f"Bandit output parsing failed: {str(e)}")
         except Exception as e:
-            raise RuntimeError(f"Bandit 扫描异常: {str(e)}")
+            raise RuntimeError(f"Bandit scan exception: {str(e)}")
     
     def _scan_with_semgrep(self, code: str, language: str, scan_id: str) -> Dict[str, Any]:
         """
-        使用 Semgrep 扫描 Java/JavaScript 代码
+        Use Semgrep to scan Java/JavaScript code
         
         Args:
-            code: 代码内容
-            language: 语言类型
-            scan_id: 扫描任务ID
+            code: Code content
+            language: Language type
+            scan_id: Scan task ID
             
         Returns:
-            Semgrep 扫描结果
+            Semgrep scan results
         """
-        logger.info(f"开始 Semgrep 扫描 - scan_id: {scan_id}, language: {language}")
+        logger.info(f"Starting Semgrep scan - scan_id: {scan_id}, language: {language}")
         
-        # 根据语言确定文件扩展名
+        # Determine file extension based on language
         ext_map = {
             'java': '.java',
             'javascript': '.js',
