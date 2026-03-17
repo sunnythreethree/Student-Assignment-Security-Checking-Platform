@@ -1,0 +1,9 @@
+# lambda_a/requirements.txt
+#
+# boto3 is pre-installed in the Lambda Python runtime — no need to bundle it.
+# List it here only for local development and unit testing.
+#
+boto3>=1.34.0
+
+# Test dependencies (not bundled in Lambda deployment package)
+pytest>=8.0.0
