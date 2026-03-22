@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Lambda A — Input validation and SQS dispatch layer for the SAST platform.
+  Imports SQS queue URL/ARN from the sast-sqs stack.
+  Jingsi Zhang | CS6620 Group 9
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+
+  CodeBucket:
+    Type: String
+    Description: S3 bucket where lambda_a.zip was uploaded.
+
+  CodeKey:
+    Type: String
+    Default: lambda_a.zip
+    Description: S3 object key for the Lambda A deployment package.
+
+  DynamoDBTableName:
+    Type: String
+    Default: sast-scans
+    Description: DynamoDB table name (must match dynamodb.yaml stack).
+
+  S3ReportBucket:
+    Type: String
+    Default: sast-reports
+    Description: S3 bucket where scan reports are stored (used for presigned URLs).
+
+  SQSStackName:
+    Type: String
+    Default: sast-sqs
+    Description: >
+      Name of the CloudFormation stack that deployed sqs.yaml.
+      Used to import ScanQueueUrl and ScanQueueArn via Fn::ImportValue.
+
+  LambdaTimeout:
+    Type: Number
+    Default: 30
+    Description: Lambda timeout in seconds (validation + SQS write is fast).
+
+  LambdaMemory:
+    Type: Number
+    Default: 256
+    Description: Lambda memory in MB.
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Lambda Function -----------------------------------------------------
+  LambdaAFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sast-lambda-a
+      Description: "SAST Platform — input validation, scan_id generation, SQS dispatch"
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemory
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          SQS_QUEUE_URL:
+            Fn::ImportValue: !Sub "${SQSStackName}-ScanQueueUrl"
+          DYNAMODB_TABLE: !Ref DynamoDBTableName
+          S3_BUCKET: !Ref S3ReportBucket
+      Tags:
+        - Key: Project
+          Value: sast-platform
+        - Key: Component
+          Value: lambda-a
+        - Key: Owner
+          Value: Jingsi
+
+  # --- Lambda Function URL (replaces API Gateway) --------------------------
+  LambdaAFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE          # Public endpoint — frontend calls directly
+      TargetFunctionArn: !GetAtt LambdaAFunction.Arn
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+        MaxAge: 86400
+
+  # --- Permission for Function URL to invoke Lambda ------------------------
+  LambdaAFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaAFunction.Arn
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+
+  LambdaAFunctionArn:
+    Description: ARN of Lambda A
+    Value: !GetAtt LambdaAFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaAArn"
+
+  LambdaAFunctionUrl:
+    Description: >
+      Public HTTPS endpoint for Lambda A.
+      Frontend POST /scan and GET /status calls go here.
+    Value: !GetAtt LambdaAFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaAUrl"
