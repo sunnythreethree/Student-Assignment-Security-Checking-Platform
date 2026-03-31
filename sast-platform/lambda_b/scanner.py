@@ -1,43 +1,36 @@
 """
-Scanning Engine Module
-Responsible for integrating Bandit (Python code scanning) and Semgrep (Java/JS code scanning)
+this module runs security scans on code
+python -> bandit
+java/javascript -> semgrep
 """
 import json
 import os
 import subprocess
 import tempfile
-from pathlib import Path
-from typing import Dict, Any, List
 import logging
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger = logging.getLogger()
 
 
 class SecurityScanner:
-    """Security scanner class, integrating Bandit and Semgrep"""
+    """
+    wrapper class to handle different scanners
+    """
     
     def __init__(self):
         self.temp_dir = None
     
-    def scan_code(self, code: str, language: str, scan_id: str) -> Dict[str, Any]:
+    def scan_code(self, code: str, language: str, scan_id: str):
         """
-        Choose appropriate scanner based on language type to scan code
-        
-        Args:
-            code: Code content to be scanned
-            language: Code language (python, java, javascript)
-            scan_id: Scan task ID
-            
-        Returns:
-            Dictionary containing scan results
+        main entry
+        decide which tool to use based on language
         """
         try:
-            # Create temporary directory
+            # create a temp folder to store code file；will be cleaned up after scan
             with tempfile.TemporaryDirectory() as temp_dir:
                 self.temp_dir = temp_dir
                 
-                # Choose scanner based on language
+                # pick scanner based on language
                 if language.lower() == 'python':
                     return self._scan_with_bandit(code, scan_id)
                 elif language.lower() in ['java', 'javascript', 'js']:
@@ -56,26 +49,19 @@ class SecurityScanner:
                 'summary': {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
             }
     
-    def _scan_with_bandit(self, code: str, scan_id: str) -> Dict[str, Any]:
+    def _scan_with_bandit(self, code: str, scan_id: str):
         """
         Use Bandit to scan Python code
-        
-        Args:
-            code: Python code content
-            scan_id: Scan task ID
-            
-        Returns:
-            Bandit scan results
         """
-        logger.info(f"Starting Bandit scan - scan_id: {scan_id}")
+        print(f"starting bandit scan {scan_id}")
         
-        # Write temporary Python file
+        # write code in temp python file
         python_file = os.path.join(self.temp_dir, f"code_{scan_id}.py")
         with open(python_file, 'w', encoding='utf-8') as f:
             f.write(code)
         
         try:
-            # Run Bandit scan
+            # Run Bandit 
             cmd = [
                 'bandit',
                 '-r', python_file,
@@ -91,15 +77,17 @@ class SecurityScanner:
                 cwd=self.temp_dir
             )
             
-            # Bandit return codes: 0=no issues, 1=has issues but successful, >=2=error
+            # bandit return code:
+            # 0 -> no issue
+            # 1 -> issues found
+            # >=2 -> error
             if result.returncode >= 2:
                 raise RuntimeError(f"Bandit execution failed: {result.stderr}")
             
-            # Parse JSON results
+            # gets JSON output
             if result.stdout.strip():
                 bandit_output = json.loads(result.stdout)
             else:
-                # No issues found
                 bandit_output = {
                     "results": [],
                     "metrics": {
@@ -112,7 +100,7 @@ class SecurityScanner:
                     }
                 }
             
-            logger.info(f"Bandit scan completed - scan_id: {scan_id}, issues found: {len(bandit_output.get('results', []))}")
+            print(f"bandit done, issues: {len(bandit_output.get('results', []))}")
             
             return {
                 'scan_id': scan_id,
@@ -126,25 +114,17 @@ class SecurityScanner:
         except subprocess.TimeoutExpired:
             raise RuntimeError("Bandit scan timeout")
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"Bandit output parsing failed: {str(e)}")
+            raise RuntimeError(f"Bandit output failed: {str(e)}")
         except Exception as e:
             raise RuntimeError(f"Bandit scan exception: {str(e)}")
     
-    def _scan_with_semgrep(self, code: str, language: str, scan_id: str) -> Dict[str, Any]:
+    def _scan_with_semgrep(self, code: str, language: str, scan_id: str):
         """
-        Use Semgrep to scan Java/JavaScript code
-        
-        Args:
-            code: Code content
-            language: Language type
-            scan_id: Scan task ID
-            
-        Returns:
-            Semgrep scan results
+        use semgrep for java / js
         """
-        logger.info(f"Starting Semgrep scan - scan_id: {scan_id}, language: {language}")
+        print(f"starting semgrep scan {scan_id}")
         
-        # Determine file extension based on language
+        # Decide file extension based on language
         ext_map = {
             'java': '.java',
             'javascript': '.js',
@@ -154,18 +134,18 @@ class SecurityScanner:
         file_ext = ext_map.get(language.lower(), '.txt')
         code_file = os.path.join(self.temp_dir, f"code_{scan_id}{file_ext}")
         
-        # 写入临时代码文件
+        # Write code to temp file
         with open(code_file, 'w', encoding='utf-8') as f:
             f.write(code)
         
         try:
-            # 运行 Semgrep 扫描
+            # Run Semgrep
             cmd = [
                 'semgrep',
-                '--config=auto',  # 使用自动规则集
-                '--json',         # JSON 输出
-                '--quiet',        # 减少输出
-                '--no-git-ignore', # 忽略 .gitignore
+                '--config=auto',   # Use auto ruleset
+                '--json',          # JSON output
+                '--quiet',         # Reduce output noise
+                '--no-git-ignore', # Ignore .gitignore
                 code_file
             ]
             
@@ -173,22 +153,22 @@ class SecurityScanner:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5分钟超时
+                timeout=300,  # 5 minute timeout
                 cwd=self.temp_dir
             )
             
-            # Semgrep 返回码: 0=无问题, 1=有问题, >=2=错误
+            # Semgrep return codes
             if result.returncode >= 2:
-                raise RuntimeError(f"Semgrep 执行失败: {result.stderr}")
-            
-            # 解析 JSON 结果
+                raise RuntimeError(f"Semgrep execution failed: {result.stderr}")
+
+            # gets JSON output
             if result.stdout.strip():
                 semgrep_output = json.loads(result.stdout)
             else:
                 semgrep_output = {"results": []}
             
             results = semgrep_output.get('results', [])
-            logger.info(f"Semgrep 扫描完成 - scan_id: {scan_id}, 发现问题: {len(results)}")
+            print(f"semgrep done, issues: {len(results)}")
             
             return {
                 'scan_id': scan_id,
@@ -199,25 +179,17 @@ class SecurityScanner:
             }
             
         except subprocess.TimeoutExpired:
-            raise RuntimeError("Semgrep 扫描超时")
+            raise RuntimeError("Semgrep scan timed out")
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"Semgrep 输出解析失败: {str(e)}")
+            raise RuntimeError(f"Semgrep output parsing failed: {str(e)}")
         except Exception as e:
-            raise RuntimeError(f"Semgrep 扫描异常: {str(e)}")
+            raise RuntimeError(f"Semgrep scan exception: {str(e)}")
 
 
-def scan_code_with_timeout(code: str, language: str, scan_id: str, timeout: int = 300) -> Dict[str, Any]:
+def scan_code_with_timeout(code: str, language: str, scan_id: str, timeout: int = 300):
     """
-    带超时的代码扫描函数
-    
-    Args:
-        code: 要扫描的代码
-        language: 代码语言
-        scan_id: 扫描ID
-        timeout: 超时时间（秒）
-        
-    Returns:
-        扫描结果
+    simple wrapper for scanner
+    timeout not really enforced yet
     """
     scanner = SecurityScanner()
     return scanner.scan_code(code, language, scan_id)
