@@ -66,13 +66,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             try:
                 # Parse message
                 message_body = json.loads(record['body'])
-                scan_id = message_body['scan_id']
-                code = message_body['code']
-                language = message_body['language']
-                student_id = message_body['student_id']
-                
+                scan_id     = message_body['scan_id']
+                code        = message_body['code']
+                language    = message_body['language']
+                student_id  = message_body['student_id']
+                # s3_code_key is present after PR #48 (S3-staging) is merged;
+                # fall back to None so existing messages still work.
+                s3_code_key = message_body.get('s3_code_key')
+
                 logger.info(f"Started processing scan task - scan_id: {scan_id}, language: {language}")
-                
+
                 # Execute scanning
                 result = process_scan_request(
                     scan_id=scan_id,
@@ -80,7 +83,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     language=language,
                     student_id=student_id,
                     table=table,
-                    s3_bucket_name=s3_bucket_name
+                    s3_bucket_name=s3_bucket_name,
+                    s3_code_key=s3_code_key,
                 )
                 
                 if result['success']:
@@ -130,23 +134,32 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def process_scan_request(scan_id: str, code: str, language: str, student_id: str,
-                        table: Any, s3_bucket_name: str) -> Dict[str, Any]:
+                        table: Any, s3_bucket_name: str,
+                        s3_code_key: str = None) -> Dict[str, Any]:
     """
-    Process single scan request.
+    Process a single scan request.
 
-    If the submitted code exceeds LAMBDA_CODE_SIZE_LIMIT, the scan is
+    If the submitted code exceeds LAMBDA_CODE_SIZE_LIMIT bytes, the scan is
     offloaded to ECS Fargate via handle_ecs_fallback() and this function
-    returns immediately (the ECS task will update DynamoDB when it finishes).
+    returns immediately (the ECS task updates DynamoDB when it finishes).
+
+    s3_code_key: S3 object key for the uploaded source code (provided by
+    Lambda A after PR #48 S3-staging lands).  Required for the ECS path
+    because raw code cannot be passed via container env vars for large files.
     """
     try:
+        # Use byte length — len(str) counts characters, not bytes.
+        # Multi-byte characters (e.g. Unicode comments) would undercount.
+        code_bytes = len(code.encode('utf-8'))
+
         # Route large submissions to ECS Fargate to avoid Lambda timeout/OOM
-        if len(code) > LAMBDA_CODE_SIZE_LIMIT:
+        if code_bytes > LAMBDA_CODE_SIZE_LIMIT:
             logger.info(
-                f"Code size {len(code)} bytes exceeds {LAMBDA_CODE_SIZE_LIMIT} limit "
+                f"Code size {code_bytes} bytes exceeds {LAMBDA_CODE_SIZE_LIMIT} limit "
                 f"— routing to ECS Fargate - scan_id: {scan_id}"
             )
             update_scan_status(table, student_id, scan_id, 'ECS_QUEUED')
-            return handle_ecs_fallback(scan_id, code, language, student_id)
+            return handle_ecs_fallback(scan_id, language, student_id, s3_code_key)
 
         # Step 1: Execute security scan
         logger.info(f"Starting scan - scan_id: {scan_id}")
@@ -266,35 +279,45 @@ def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,
         raise
 
 
-def handle_ecs_fallback(scan_id: str, code: str, language: str, student_id: str) -> Dict[str, Any]:
+def handle_ecs_fallback(scan_id: str, language: str, student_id: str,
+                       s3_code_key: str) -> Dict[str, Any]:
     """
-    Handle ECS Fargate fallback logic for large files or complex scans
-    Used when Lambda memory is insufficient or execution time exceeds limit
-    
+    Launch an ECS Fargate task to handle a scan that is too large for Lambda.
+
+    The source code is referenced via s3_code_key (an S3 object key) rather
+    than being passed inline.  ECS container env var overrides are capped at
+    ~8 KB per entry, so passing raw code strings for large files would cause
+    the ECS API call to fail.  ecs_handler.py reads S3_CODE_KEY and fetches
+    the code from S3 directly.
+
     Args:
-        scan_id: Scan ID
-        code: Code content
-        language: Code language
-        student_id: Student ID
-        
+        scan_id:     Scan task ID.
+        language:    Programming language of the submission.
+        student_id:  Student who submitted the scan.
+        s3_code_key: S3 object key for the uploaded source code (set by
+                     Lambda A via S3-staging, PR #48).
+
     Returns:
-        ECS task launch result
+        Dict with 'success' bool and 'task_arn' or 'error'.
     """
+    if not s3_code_key:
+        logger.error(f"ECS fallback requires s3_code_key but none provided - scan_id: {scan_id}")
+        return {'success': False, 'error': 'ECS fallback requires s3_code_key (S3-staging not active)'}
+
     try:
-        ecs_client = boto3.client('ecs')
-        cluster_name = os.environ.get('ECS_CLUSTER_NAME', 'sast-platform-cluster')
+        ecs_client      = boto3.client('ecs')
+        cluster_name    = os.environ.get('ECS_CLUSTER_NAME', 'sast-platform-cluster')
         task_definition = os.environ.get('ECS_TASK_DEFINITION', 'sast-scanner-task')
-        
-        # Launch ECS task
+
         response = ecs_client.run_task(
             cluster=cluster_name,
             taskDefinition=task_definition,
             launchType='FARGATE',
             networkConfiguration={
                 'awsvpcConfiguration': {
-                    'subnets': os.environ.get('ECS_SUBNETS', '').split(','),
-                    'securityGroups': os.environ.get('ECS_SECURITY_GROUPS', '').split(','),
-                    'assignPublicIp': 'ENABLED'
+                    'subnets':          os.environ.get('ECS_SUBNETS', '').split(','),
+                    'securityGroups':   os.environ.get('ECS_SECURITY_GROUPS', '').split(','),
+                    'assignPublicIp':   'ENABLED',
                 }
             },
             overrides={
@@ -302,28 +325,30 @@ def handle_ecs_fallback(scan_id: str, code: str, language: str, student_id: str)
                     {
                         'name': 'scanner-container',
                         'environment': [
-                            {'name': 'SCAN_ID', 'value': scan_id},
-                            {'name': 'STUDENT_ID', 'value': student_id},
-                            {'name': 'LANGUAGE', 'value': language},
-                            {'name': 'CODE_CONTENT', 'value': code}
+                            {'name': 'SCAN_ID',      'value': scan_id},
+                            {'name': 'STUDENT_ID',   'value': student_id},
+                            {'name': 'LANGUAGE',     'value': language},
+                            # Pass the S3 key, not the raw code.
+                            # ecs_handler._fetch_code() downloads it from S3.
+                            {'name': 'S3_CODE_KEY',  'value': s3_code_key},
                         ]
                     }
                 ]
             }
         )
-        
+
         task_arn = response['tasks'][0]['taskArn']
         logger.info(f"ECS task launched - scan_id: {scan_id}, task_arn: {task_arn}")
-        
+
         return {
             'success': True,
             'task_arn': task_arn,
-            'message': 'ECS task launched, will complete scan asynchronously'
+            'message': 'ECS task launched, scan will complete asynchronously',
         }
-        
+
     except Exception as e:
         logger.error(f"ECS task launch failed - scan_id: {scan_id}, error: {str(e)}")
         return {
             'success': False,
-            'error': f"ECS task launch failed: {str(e)}"
+            'error': f"ECS task launch failed: {str(e)}",
         }
