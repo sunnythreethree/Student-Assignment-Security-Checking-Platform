@@ -16,11 +16,12 @@ class S3Writer:
         self.region = region
         self.s3_client = boto3.client("s3", region_name=region)
 
-    def write_scan_report(self, scan_id, report_data):
+    def write_scan_report(self, scan_id, report_data, student_id):
         """Upload a scan report and return the S3 key."""
         try:
-            # store reports under reports/ folder
-            s3_key = f"reports/{scan_id}.json"
+            # store reports under reports/{student_id}/{scan_id}.json
+            # matches the path convention documented in infrastructure/s3.yaml
+            s3_key = f"reports/{student_id}/{scan_id}.json"
 
             # convert dict to JSON string
             json_content = json.dumps(report_data, indent=2, ensure_ascii=False)
@@ -107,10 +108,10 @@ class S3Writer:
         )
 
 
-def write_scan_result_to_s3(bucket_name, scan_id, report_data, region="us-east-1"):
+def write_scan_result_to_s3(bucket_name, scan_id, student_id, report_data, region="us-east-1"):
     """Save result to S3 and return key + URL."""
     writer = S3Writer(bucket_name, region)
-    s3_key = writer.write_scan_report(scan_id, report_data)
+    s3_key = writer.write_scan_report(scan_id, report_data, student_id)
     url = writer.generate_presigned_url(s3_key)
     return s3_key, url
 
