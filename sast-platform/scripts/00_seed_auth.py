@@ -31,13 +31,25 @@ def generate_key() -> str:
     return secrets.token_hex(16)  # 32 hex chars
 
 
-def seed_student(table, student_id: str, api_key: str | None = None) -> str:
+def seed_student(table, student_id: str, api_key: str | None = None) -> str | None:
     """
-    Write a student → api_key entry. If api_key is None, a new one is generated.
-    Returns the api_key that was written.
+    Write a student → api_key entry only if that api_key slot is not yet taken.
+    If api_key is None, a new one is generated.
+
+    Returns the api_key that was written, or None if the student already has a
+    key (i.e. the script is being re-run — existing key is left unchanged).
+    This makes the script idempotent: safe to re-run without invalidating
+    existing student sessions.
     """
     key = api_key or generate_key()
-    table.put_item(Item={"api_key": key, "student_id": student_id})
+    try:
+        table.put_item(
+            Item={"api_key": key, "student_id": student_id},
+            ConditionExpression="attribute_not_exists(api_key)",
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        # Key already exists — leave it unchanged so existing sessions stay valid
+        return None
     return key
 
 
@@ -73,15 +85,22 @@ def main():
     print(f"{'student_id':<30}  {'api_key'}")
     print("-" * 65)
 
+    seeded = 0
+    skipped = 0
     for sid in student_ids:
         try:
             key = seed_student(table, sid)
-            print(f"{sid:<30}  {key}")
+            if key is None:
+                print(f"{sid:<30}  (already exists — skipped)")
+                skipped += 1
+            else:
+                print(f"{sid:<30}  {key}")
+                seeded += 1
         except ClientError as e:
             print(f"ERROR seeding {sid}: {e}", file=sys.stderr)
             sys.exit(1)
 
-    print(f"\nSeeded {len(student_ids)} student(s) into table '{args.table}'.")
+    print(f"\nSeeded {seeded} new student(s), skipped {skipped} existing into table '{args.table}'.")
     print("Share each api_key with the corresponding student — treat it like a password.")
 
 

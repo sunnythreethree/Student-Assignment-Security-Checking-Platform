@@ -49,6 +49,8 @@ Resources:
       KeySchema:
         - AttributeName: api_key
           KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 
 Outputs:
   ScanResultsTableName:
