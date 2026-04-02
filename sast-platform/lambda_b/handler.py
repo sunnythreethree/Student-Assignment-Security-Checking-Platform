@@ -407,8 +407,8 @@ def handle_ecs_fallback(scan_id: str, language: str, student_id: str,
             launchType='FARGATE',
             networkConfiguration={
                 'awsvpcConfiguration': {
-                    'subnets':          os.environ.get('ECS_SUBNETS', '').split(','),
-                    'securityGroups':   os.environ.get('ECS_SECURITY_GROUPS', '').split(','),
+                    'subnets':          [s for s in os.environ.get('ECS_SUBNETS', '').split(',') if s],
+                    'securityGroups':   [s for s in os.environ.get('ECS_SECURITY_GROUPS', '').split(',') if s],
                     'assignPublicIp':   'ENABLED',
                 }
             },
