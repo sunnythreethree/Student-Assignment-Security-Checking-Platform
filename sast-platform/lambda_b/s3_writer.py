@@ -8,6 +8,11 @@ from botocore.exceptions import ClientError, NoCredentialsError
 logger = logging.getLogger(__name__)
 
 
+class S3WriteError(Exception):
+    """Raised when a scan report cannot be written to or read from S3."""
+    pass
+
+
 class S3Writer:
     """Save scan reports to S3."""
 
@@ -44,16 +49,16 @@ class S3Writer:
 
         except NoCredentialsError:
             logger.error("AWS credentials were not found")
-            raise Exception("AWS credentials were not found")
+            raise S3WriteError("AWS credentials were not found")
 
         except ClientError as e:
             error_msg = e.response["Error"]["Message"]
             logger.error(f"failed to upload report: {error_msg}")
-            raise Exception(f"failed to upload report: {error_msg}")
+            raise S3WriteError(f"failed to upload report: {error_msg}")
 
         except Exception as e:
             logger.error(f"unexpected error: {str(e)}")
-            raise Exception(f"unexpected error: {str(e)}")
+            raise S3WriteError(f"unexpected error writing report: {str(e)}")
 
     def generate_presigned_url(self, s3_key, expiration=3600):
         """Create a temporary download link."""
@@ -70,11 +75,11 @@ class S3Writer:
         except ClientError as e:
             error_msg = e.response["Error"]["Message"]
             logger.error(f"failed to generate URL: {error_msg}")
-            raise Exception(f"failed to generate URL: {error_msg}")
+            raise S3WriteError(f"failed to generate URL: {error_msg}")
 
         except Exception as e:
             logger.error(f"unexpected error: {str(e)}")
-            raise Exception(f"unexpected error: {str(e)}")
+            raise S3WriteError(f"unexpected error generating URL: {str(e)}")
 
     def check_object_exists(self, s3_key):
         """Check if a report exists in S3."""
