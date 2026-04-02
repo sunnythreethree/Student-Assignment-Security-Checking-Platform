@@ -197,14 +197,14 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
 
 def update_scan_status_ecs(table, student_id, scan_id, status, vuln_count=0, s3_report_key=None, error_message=None):
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         # base update fields
         update_expression = "SET #status = :status, completed_at = :completed_at, processing_method = :method"
         expression_attribute_names = {"#status": "status"}
         expression_attribute_values = {
             ":status": status,
-            ":completed_at": datetime.utcnow().isoformat() + "Z",
+            ":completed_at": datetime.now(timezone.utc).isoformat(),
             ":method": "ECS_FARGATE"
         }
 

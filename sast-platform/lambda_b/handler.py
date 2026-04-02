@@ -328,14 +328,14 @@ def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,
         error_message: Error message (only used in FAILED status)
     """
     try:
-        from datetime import datetime
-        
+        from datetime import datetime, timezone
+
         # Build update expression
         update_expression = "SET #status = :status, completed_at = :completed_at"
         expression_attribute_names = {"#status": "status"}
         expression_attribute_values = {
             ":status": status,
-            ":completed_at": datetime.utcnow().isoformat() + 'Z'
+            ":completed_at": datetime.now(timezone.utc).isoformat()
         }
         
         if status == 'DONE':
