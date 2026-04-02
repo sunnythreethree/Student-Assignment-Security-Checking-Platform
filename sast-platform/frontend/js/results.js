@@ -34,9 +34,8 @@ function normalizeSummary(summary) {
 function buildDownloadSection(report) {
 	if (!report?.report_url) return "";
 
-	const expiresAt   = report.report_url_expires_at;
-	const scanId      = report.scan_id;
-	const studentId   = report.student_id;
+	const expiresAt = report.report_url_expires_at;
+	const scanId    = report.scan_id;
 
 	let expiryHtml = "";
 	let refreshHtml = "";
@@ -52,8 +51,10 @@ function buildDownloadSection(report) {
 			expiryHtml = `<p class="url-expiry">Download link expires at: <strong>${escapeHtml(expiresLocal)}</strong></p>`;
 		}
 
-		// Show refresh button if pollStatus is available (loaded from app.js)
-		if (scanId && studentId && typeof window.pollStatus === "function") {
+		// Show refresh button if pollStatus is available (loaded from app.js).
+		// Auth is handled via X-Student-Key header inside window.pollStatus —
+		// student_id is not needed here.
+		if (scanId && typeof window.pollStatus === "function") {
 			refreshHtml = `<button id="refresh-url-btn" type="button">Refresh link</button>`;
 		}
 	}
@@ -78,12 +79,10 @@ function attachRefreshHandler(report, container) {
 	if (!btn) return;
 
 	btn.addEventListener("click", async () => {
-		btn.disabled  = true;
+		btn.disabled    = true;
 		btn.textContent = "Refreshing...";
 		try {
-			const fresh = await window.pollStatus(report.scan_id, report.student_id, {
-				maxWaitMs: 10_000,  // give up after 10 s if not DONE yet
-			});
+			const fresh = await window.pollStatus(report.scan_id);
 			renderScanResults(fresh, container);
 		} catch (err) {
 			btn.disabled    = false;

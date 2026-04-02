@@ -269,3 +269,20 @@ function showError(html) {
 function dismissError() {
   document.getElementById("error-banner").classList.add("hidden");
 }
+
+// ── Public API for results.js ─────────────────────────────────────────────────
+
+/**
+ * Fetch the current status for a scan once and return the parsed JSON.
+ * Used by the "Refresh link" button in results.js to get a fresh presigned URL
+ * without re-running the full polling loop.
+ */
+window.pollStatus = async function pollStatus(scanId) {
+  const apiKey = localStorage.getItem(LS_API_KEY) || "";
+  const res = await fetch(
+    `${API_BASE_URL}/status?scan_id=${encodeURIComponent(scanId)}`,
+    { headers: { "x-student-key": apiKey } }
+  );
+  if (!res.ok) throw new Error(`Status request failed (${res.status})`);
+  return res.json();
+};
