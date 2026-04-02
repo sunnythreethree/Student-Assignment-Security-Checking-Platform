@@ -1,7 +1,7 @@
 """
 this module runs security scans on code
 python -> bandit
-java/javascript -> semgrep
+java/javascript/typescript/go/ruby/c/cpp -> semgrep
 """
 import json
 import os
@@ -33,7 +33,7 @@ class SecurityScanner:
                 # pick scanner based on language
                 if language.lower() == 'python':
                     return self._scan_with_bandit(code, scan_id)
-                elif language.lower() in ['java', 'javascript', 'js']:
+                elif language.lower() in ['java', 'javascript', 'js', 'typescript', 'go', 'ruby', 'c', 'cpp']:
                     return self._scan_with_semgrep(code, language, scan_id)
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
@@ -120,7 +120,7 @@ class SecurityScanner:
     
     def _scan_with_semgrep(self, code: str, language: str, scan_id: str):
         """
-        use semgrep for java / js
+        use semgrep for java / js / typescript / go / ruby / c / cpp
         """
         print(f"starting semgrep scan {scan_id}")
         
@@ -128,7 +128,12 @@ class SecurityScanner:
         ext_map = {
             'java': '.java',
             'javascript': '.js',
-            'js': '.js'
+            'js': '.js',
+            'typescript': '.ts',
+            'go': '.go',
+            'ruby': '.rb',
+            'c': '.c',
+            'cpp': '.cpp'
         }
         
         file_ext = ext_map.get(language.lower(), '.txt')
