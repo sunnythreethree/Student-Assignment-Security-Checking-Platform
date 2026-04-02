@@ -1,6 +1,6 @@
 # Multi-stage build for security scanning tools
 # Stage 1: Build Semgrep
-FROM python:3.11-slim as semgrep-builder
+FROM python:3.12-slim as semgrep-builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -13,13 +13,13 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir semgrep>=1.45.0
 
 # Stage 2: Build Bandit
-FROM python:3.11-slim as bandit-builder
+FROM python:3.12-slim as bandit-builder
 
 # Install Bandit
 RUN pip install --no-cache-dir bandit[toml]>=1.7.5
 
 # Stage 3: Final runtime image
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -39,9 +39,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy tools from builder stages
 COPY --from=semgrep-builder /usr/local/bin/semgrep /usr/local/bin/semgrep
-COPY --from=semgrep-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=semgrep-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=bandit-builder /usr/local/bin/bandit /usr/local/bin/bandit
-COPY --from=bandit-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=bandit-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
 # Install additional Python dependencies
 COPY requirements.txt /tmp/requirements.txt
