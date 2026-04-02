@@ -33,7 +33,7 @@ Browser
                                                                   → presigned URL
 ```
 
-**Scan status lifecycle:** `PENDING` → `DONE` | `FAILED`
+**Scan status lifecycle:** `PENDING` → `IN_PROGRESS` → `DONE` | `FAILED`
 
 ---
 
@@ -86,7 +86,7 @@ python scripts/00_seed_auth.py --table StudentAuth --add-student zhang.jings
 
 **Base URL:** Lambda A Function URL (printed by `01_setup_infra.sh`)
 
-### POST / — Submit a scan
+### POST /scan — Submit a scan
 
 ```
 Headers:
@@ -108,16 +108,23 @@ Supported languages: python, java, javascript, typescript, go, ruby, c, cpp
 
 ---
 
-### GET /?scan_id=\<id\> — Poll scan status
+### GET /status?scan_id=\<id\> — Poll scan status
 
 ```
 Headers:
   X-Student-Key: <api_key>
 ```
 
-**Response 200 (PENDING):**
+**Response 200 (PENDING / IN_PROGRESS):**
 ```json
-{ "scan_id": "scan-a1b2c3d4", "status": "PENDING", "language": "python", "created_at": "..." }
+{
+  "scan_id": "scan-a1b2c3d4",
+  "status": "PENDING",
+  "language": "python",
+  "created_at": "...",
+  "retry_after_seconds": 5,
+  "scan_expires_at": "2025-01-01T13:00:00+00:00"
+}
 ```
 
 **Response 200 (DONE):**
@@ -128,11 +135,60 @@ Headers:
   "language": "python",
   "vuln_count": 3,
   "completed_at": "...",
-  "report_url": "https://s3.amazonaws.com/...?X-Amz-Expires=3600&..."
+  "report_url": "https://s3.amazonaws.com/...?X-Amz-Expires=3600&...",
+  "report_url_expires_at": "2025-01-01T13:00:00+00:00"
 }
 ```
 
 **Errors:** `400` missing scan_id · `401` auth · `403` not your scan · `404` not found
+
+---
+
+### GET /history — List past scans
+
+```
+Headers:
+  X-Student-Key: <api_key>
+```
+
+**Response 200:**
+```json
+{
+  "student_id": "neu123456",
+  "scans": [
+    { "scan_id": "scan-a1b2c3d4", "status": "DONE", "language": "python", "vuln_count": 3, "created_at": "...", "completed_at": "..." }
+  ]
+}
+```
+
+**Errors:** `401` auth
+
+---
+
+## Demo Fixtures
+
+`tests/fixtures/` contains sample files with known vulnerabilities for demo purposes.
+
+### `vulnerable_python.py`
+
+Submit with **language: python**. Triggers Bandit findings:
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| B602 | HIGH | `subprocess.call` with `shell=True` — command injection |
+| B307 | HIGH | `eval()` — arbitrary code execution |
+| B301 | MEDIUM | `pickle.loads` — arbitrary object deserialization |
+| B105 | LOW | Hardcoded password string |
+
+### `vulnerable_javascript.js`
+
+Submit with **language: javascript**. Triggers Semgrep findings:
+
+| Rule | Description |
+|------|-------------|
+| `javascript.lang.security.audit.eval-detected` | `eval()` with user-controlled input |
+| `javascript.sequelize.security.audit.sequelize-injection` | SQL injection via template literal |
+| `javascript.lang.security.audit.hardcoded-credentials` | Hardcoded DB password |
 
 ---
 
