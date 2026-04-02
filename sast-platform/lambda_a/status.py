@@ -32,7 +32,7 @@ def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: s
     message, preventing cross-tenant enumeration.
 
     Returns a dict with:
-      - status: PENDING | DONE | FAILED
+      - status: PENDING | IN_PROGRESS | DONE | FAILED
       - scan_id
       - language
       - created_at

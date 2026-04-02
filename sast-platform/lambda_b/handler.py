@@ -155,18 +155,33 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
     uploaded object in S3 permanently.
     """
     try:
-        # Idempotency guard: skip if this scan was already completed or failed.
-        # SQS at-least-once delivery can redeliver the same message; we must not
-        # overwrite a finished result.
-        existing = table.get_item(
-            Key={"student_id": student_id, "scan_id": scan_id}
-        ).get("Item")
-        if existing and existing.get("status") in ("DONE", "FAILED"):
-            logger.info(
-                "scan_id %s already processed (status=%s) — skipping duplicate",
-                scan_id, existing["status"],
+        # Idempotency guard: atomically claim this scan by flipping PENDING →
+        # IN_PROGRESS.  If another Lambda B invocation already claimed it (status
+        # is IN_PROGRESS, DONE, or FAILED), the condition fails and we skip.
+        # This prevents concurrent duplicate processing when SQS redelivers a
+        # message while the first invocation is still running.
+        try:
+            table.update_item(
+                Key={"student_id": student_id, "scan_id": scan_id},
+                UpdateExpression="SET #status = :in_progress",
+                ConditionExpression="#status = :pending",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":in_progress": "IN_PROGRESS",
+                    ":pending":     "PENDING",
+                },
             )
-            return {"success": True, "scan_id": scan_id, "skipped": True}
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                current = table.get_item(
+                    Key={"student_id": student_id, "scan_id": scan_id}
+                ).get("Item", {})
+                logger.info(
+                    "scan_id %s already claimed (status=%s) — skipping duplicate",
+                    scan_id, current.get("status", "unknown"),
+                )
+                return {"success": True, "scan_id": scan_id, "skipped": True}
+            raise
 
         # Step 1: Fetch source code from S3
         logger.info(f"Fetching code from S3 - scan_id: {scan_id}, key: {s3_code_key}")
