@@ -133,8 +133,27 @@ async function poll(scanId, apiKey) {
     return;
   }
 
+  // Respect server-provided expiry — stop early if backend marks job expired
+  if (data.scan_expires_at) {
+    const serverDeadline = new Date(data.scan_expires_at).getTime();
+    if (Date.now() >= serverDeadline) {
+      showFailed(scanId);
+      showError(`Scan expired on the server. (Scan ID: ${scanId})`);
+      setSubmitLoading(false);
+      return;
+    }
+    // Also tighten the local deadline if server expiry is sooner
+    if (serverDeadline < _pollDeadline) {
+      _pollDeadline = serverDeadline;
+    }
+  }
+
+  // Use server's suggested interval for the first hint, then apply local backoff
+  const hintMs = data.retry_after_seconds
+    ? data.retry_after_seconds * 1000
+    : _currentInterval;
   _currentInterval = Math.min(_currentInterval * POLL_BACKOFF, POLL_MAX_MS);
-  _pollTimer = setTimeout(() => poll(scanId, apiKey), _currentInterval);
+  _pollTimer = setTimeout(() => poll(scanId, apiKey), Math.min(hintMs, POLL_MAX_MS));
 }
 
 async function handleDone(statusData, apiKey) {
