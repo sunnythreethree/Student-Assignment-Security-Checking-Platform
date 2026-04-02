@@ -9,7 +9,7 @@ Called after validation passes.
 import json
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import boto3
 from botocore.exceptions import ClientError
@@ -37,7 +37,11 @@ def create_scan_job(code: str, language: str, student_id: str,
         Exception if any AWS call fails.
     """
     scan_id     = f"scan-{uuid.uuid4().hex[:8]}"
-    timestamp   = datetime.now(timezone.utc).isoformat()
+    now         = datetime.now(timezone.utc)
+    timestamp   = now.isoformat()
+    # TTL: auto-expire records 24 h from creation so stuck PENDING scans don't
+    # accumulate. DynamoDB TTL expects a Unix epoch integer (seconds).
+    expires_at  = int((now + timedelta(hours=24)).timestamp())
     s3_code_key = f"uploads/{scan_id}.txt"
 
     # --- Upload code to S3 (avoids SQS 256KB message size limit) ---
@@ -62,6 +66,7 @@ def create_scan_job(code: str, language: str, student_id: str,
                     "status":      "PENDING",
                     "language":    language,
                     "created_at":  timestamp,
+                    "expires_at":  expires_at,
                 },
                 ConditionExpression="attribute_not_exists(scan_id)",
             )

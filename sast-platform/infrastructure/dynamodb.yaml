@@ -37,6 +37,12 @@ Resources:
             ProjectionType: ALL
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      # TTL: auto-delete records 24 h after creation; acts as a safety net for
+      # PENDING scans that were never updated (e.g. Lambda B crashed silently).
+      # dispatcher.py writes expires_at as a Unix epoch integer.
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
 
   StudentAuthTable:
     Type: AWS::DynamoDB::Table

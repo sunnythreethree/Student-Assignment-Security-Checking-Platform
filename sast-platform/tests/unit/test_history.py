@@ -6,11 +6,6 @@ Run with:
     pytest tests/unit/test_history.py -v
 """
 
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "lambda_a"))
-
 from datetime import datetime, timezone, timedelta
 import unittest.mock as mock
 
