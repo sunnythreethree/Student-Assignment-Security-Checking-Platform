@@ -23,9 +23,14 @@ s3       = boto3.client("s3")
 PRESIGNED_URL_EXPIRY = 3600  # seconds (1 hour)
 
 
-def get_scan_status(scan_id: str, table_name: str, s3_bucket: str) -> dict:
+def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: str) -> dict:
     """
-    Look up a scan record by scan_id using the GSI (scan_id-index).
+    Look up a scan record using the table primary key (student_id + scan_id).
+
+    Using the primary key instead of the GSI enforces ownership: a student
+    can only retrieve their own scan results.  If the (student_id, scan_id)
+    pair does not exist the record is treated as not found, preventing
+    cross-tenant enumeration.
 
     Returns a dict with:
       - status: PENDING | DONE | FAILED
@@ -35,23 +40,21 @@ def get_scan_status(scan_id: str, table_name: str, s3_bucket: str) -> dict:
       - (when DONE) vuln_count, completed_at, report_url (presigned S3 URL)
 
     Raises:
-        ValueError  if scan_id not found
+        ValueError  if scan_id not found or does not belong to student_id
         ClientError if AWS call fails
     """
     table = dynamodb.Table(table_name)
 
-    # Query the GSI — scan_id is not the primary key (student_id is)
-    response = table.query(
-        IndexName="scan_id-index",
-        KeyConditionExpression=Key("scan_id").eq(scan_id),
-        Limit=1,
+    # Use primary key lookup — automatically enforces ownership
+    response = table.get_item(
+        Key={"student_id": student_id, "scan_id": scan_id}
     )
 
-    items = response.get("Items", [])
-    if not items:
+    item = response.get("Item")
+    if not item:
+        # Return the same 404 whether the scan doesn't exist or belongs to
+        # another student, to avoid leaking ownership information.
         raise ValueError(f"scan_id '{scan_id}' not found.")
-
-    item = items[0]
     result = {
         "scan_id":    item["scan_id"],
         "status":     item["status"],

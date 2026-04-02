@@ -95,15 +95,19 @@ def _handle_post_scan(event):
 # ---------------------------------------------------------------------------
 
 def _handle_get_status(event):
-    params  = event.get("queryStringParameters") or {}
-    scan_id = params.get("scan_id", "").strip()
+    params     = event.get("queryStringParameters") or {}
+    scan_id    = params.get("scan_id",    "").strip()
+    student_id = params.get("student_id", "").strip()
 
     if not scan_id:
         return _response(400, {"error": "Query parameter 'scan_id' is required."})
+    if not student_id:
+        return _response(400, {"error": "Query parameter 'student_id' is required."})
 
     try:
         result = get_scan_status(
             scan_id    = scan_id,
+            student_id = student_id,
             table_name = DYNAMODB_TABLE,
             s3_bucket  = S3_BUCKET,
         )
