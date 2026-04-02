@@ -1,0 +1,404 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CloudWatch Alarms and Dashboard for the SAST Platform.
+  Covers Lambda A, Lambda B, SQS queues, and DynamoDB.
+  Deploy AFTER: sast-sqs, sast-lambda-a, sast-lambda-b, sast-dynamodb.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: sast-platform
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  SQSStackName:
+    Type: String
+    Default: sast-platform-sqs
+  DynamoDBStackName:
+    Type: String
+    Default: sast-platform-dynamodb
+  LambdaAFunctionName:
+    Type: String
+    Default: sast-lambda-a
+    Description: Must match the function name in lambda_a.yaml
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional — email for alarm notifications
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+
+  # ── SNS Alert Topic ──────────────────────────────────────────────────────────
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectName}-${Environment}-alerts"
+      Subscription: !If
+        - HasAlertEmail
+        - - Protocol: email
+            Endpoint: !Ref AlertEmail
+        - []
+
+  # ── Lambda A Alarms ──────────────────────────────────────────────────────────
+  LambdaAErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-lambda-a-errors"
+      AlarmDescription: "Lambda A: >= 3 errors in 5 min — API layer failing"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaAFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  LambdaADurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-lambda-a-duration"
+      AlarmDescription: "Lambda A: avg duration >= 25s (approaching 30s timeout)"
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaAFunctionName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 25000
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  LambdaAThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-lambda-a-throttles"
+      AlarmDescription: "Lambda A: throttle events detected"
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaAFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ── SQS Alarms ───────────────────────────────────────────────────────────────
+  # lambda_b.yaml already has inline error/duration/throttle alarms for Lambda B.
+  # These alarms cover the queue layer, which lambda_b.yaml does not watch.
+
+  ScanQueueDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-sqs-queue-depth"
+      AlarmDescription: "SQS queue >= 50 messages — Lambda B may be backed up"
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !ImportValue
+            Fn::Sub: "${SQSStackName}-ScanQueueName"
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  ScanDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-sqs-dlq-messages"
+      AlarmDescription: "SQS DLQ has messages — scans failing after 3 retries (see issue #23)"
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !Select
+            - 4
+            - !Split
+              - "/"
+              - !ImportValue
+                  Fn::Sub: "${SQSStackName}-DLQUrl"
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  # ── DynamoDB Alarms ──────────────────────────────────────────────────────────
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-dynamodb-throttles"
+      AlarmDescription: "DynamoDB: >= 5 throttled requests in 5 min"
+      Namespace: AWS/DynamoDB
+      MetricName: ThrottledRequests
+      Dimensions:
+        - Name: TableName
+          Value: !ImportValue
+            Fn::Sub: "${DynamoDBStackName}-ScanResultsTableName"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  DynamoDBSystemErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-${Environment}-dynamodb-system-errors"
+      AlarmDescription: "DynamoDB system errors detected"
+      Namespace: AWS/DynamoDB
+      MetricName: SystemErrors
+      Dimensions:
+        - Name: TableName
+          Value: !ImportValue
+            Fn::Sub: "${DynamoDBStackName}-ScanResultsTableName"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ── CloudWatch Dashboard ─────────────────────────────────────────────────────
+  # Layout mirrors the "Operational Overview" structure from the OpenAI dashboard
+  # design guide: workspace title → section headers → metric rows (KPIs + status
+  # table per service). Dense, readable, minimal chrome.
+  SASTDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${ProjectName}-${Environment}-overview"
+      DashboardBody: !Sub
+        - |
+          {
+            "widgets": [
+              {
+                "type": "text", "x": 0, "y": 0, "width": 24, "height": 1,
+                "properties": {
+                  "markdown": "# SAST Platform — Operational Overview  `${Environment}`\nTrack health, throughput, and active work across the scan pipeline."
+                }
+              },
+              {
+                "type": "alarm", "x": 0, "y": 1, "width": 24, "height": 2,
+                "properties": {
+                  "title": "Active Alarms",
+                  "alarms": [
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-lambda-a-errors",
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-lambda-a-duration",
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-lambda-a-throttles",
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-sqs-queue-depth",
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-sqs-dlq-messages",
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-dynamodb-throttles",
+                    "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${Environment}-dynamodb-system-errors"
+                  ]
+                }
+              },
+              {
+                "type": "text", "x": 0, "y": 3, "width": 24, "height": 1,
+                "properties": { "markdown": "## Lambda A — API Layer  *(POST /scan · GET /status)*" }
+              },
+              {
+                "type": "metric", "x": 0, "y": 4, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Invocations",
+                  "metrics": [["AWS/Lambda","Invocations","FunctionName","${LambdaAFunctionName}",{"stat":"Sum","label":"Total"}]],
+                  "period": 300, "view": "timeSeries", "stacked": false
+                }
+              },
+              {
+                "type": "metric", "x": 6, "y": 4, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Errors",
+                  "metrics": [["AWS/Lambda","Errors","FunctionName","${LambdaAFunctionName}",{"stat":"Sum","color":"#d13212"}]],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 3, "label": "Alarm threshold", "color": "#d13212"}]}
+                }
+              },
+              {
+                "type": "metric", "x": 12, "y": 4, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Duration (ms)",
+                  "metrics": [
+                    ["AWS/Lambda","Duration","FunctionName","${LambdaAFunctionName}",{"stat":"Average","label":"avg"}],
+                    ["AWS/Lambda","Duration","FunctionName","${LambdaAFunctionName}",{"stat":"p99","label":"p99"}]
+                  ],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 25000, "label": "≥25s alarm", "color": "#ff9900"}]}
+                }
+              },
+              {
+                "type": "metric", "x": 18, "y": 4, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Throttles",
+                  "metrics": [["AWS/Lambda","Throttles","FunctionName","${LambdaAFunctionName}",{"stat":"Sum","color":"#8c4fff"}]],
+                  "period": 300, "view": "timeSeries"
+                }
+              },
+              {
+                "type": "text", "x": 0, "y": 10, "width": 24, "height": 1,
+                "properties": { "markdown": "## Lambda B — Scan Engine  *(Bandit · Semgrep · ECS fallback)*" }
+              },
+              {
+                "type": "metric", "x": 0, "y": 11, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Invocations",
+                  "metrics": [["AWS/Lambda","Invocations","FunctionName","${LambdaBFunctionName}",{"stat":"Sum","label":"Total"}]],
+                  "period": 300, "view": "timeSeries"
+                }
+              },
+              {
+                "type": "metric", "x": 6, "y": 11, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Errors",
+                  "metrics": [["AWS/Lambda","Errors","FunctionName","${LambdaBFunctionName}",{"stat":"Sum","color":"#d13212"}]],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 5, "label": "Alarm threshold", "color": "#d13212"}]}
+                }
+              },
+              {
+                "type": "metric", "x": 12, "y": 11, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Duration (ms)",
+                  "metrics": [
+                    ["AWS/Lambda","Duration","FunctionName","${LambdaBFunctionName}",{"stat":"Average","label":"avg"}],
+                    ["AWS/Lambda","Duration","FunctionName","${LambdaBFunctionName}",{"stat":"p99","label":"p99"}]
+                  ],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 800000, "label": "≥13 min alarm", "color": "#ff9900"}]}
+                }
+              },
+              {
+                "type": "metric", "x": 18, "y": 11, "width": 6, "height": 6,
+                "properties": {
+                  "title": "Concurrent Executions",
+                  "metrics": [["AWS/Lambda","ConcurrentExecutions","FunctionName","${LambdaBFunctionName}",{"stat":"Maximum","color":"#1f77b4"}]],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 50, "label": "Reserved concurrency limit", "color": "#ff9900"}]}
+                }
+              },
+              {
+                "type": "text", "x": 0, "y": 17, "width": 24, "height": 1,
+                "properties": { "markdown": "## SQS — Scan Pipeline  *(Queue depth · Throughput · Dead letters)*" }
+              },
+              {
+                "type": "metric", "x": 0, "y": 18, "width": 8, "height": 6,
+                "properties": {
+                  "title": "Queue Depth (backlog)",
+                  "metrics": [
+                    ["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","${ScanQueueName}",{"stat":"Maximum","label":"Visible","color":"#1f77b4"}],
+                    ["AWS/SQS","ApproximateNumberOfMessagesNotVisible","QueueName","${ScanQueueName}",{"stat":"Maximum","label":"In-flight","color":"#aec7e8"}]
+                  ],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 50, "label": "Alarm (>=50)", "color": "#d13212"}]}
+                }
+              },
+              {
+                "type": "metric", "x": 8, "y": 18, "width": 8, "height": 6,
+                "properties": {
+                  "title": "Throughput (Sent vs Processed)",
+                  "metrics": [
+                    ["AWS/SQS","NumberOfMessagesSent","QueueName","${ScanQueueName}",{"stat":"Sum","label":"Sent","color":"#2ca02c"}],
+                    ["AWS/SQS","NumberOfMessagesDeleted","QueueName","${ScanQueueName}",{"stat":"Sum","label":"Processed","color":"#98df8a"}]
+                  ],
+                  "period": 300, "view": "timeSeries"
+                }
+              },
+              {
+                "type": "metric", "x": 16, "y": 18, "width": 8, "height": 6,
+                "properties": {
+                  "title": "Dead Letter Queue — should be 0",
+                  "metrics": [["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","${DLQName}",{"stat":"Sum","color":"#d13212","label":"Dead letters"}]],
+                  "period": 60, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 1, "label": "Alarm (any message)", "color": "#d13212"}]}
+                }
+              },
+              {
+                "type": "text", "x": 0, "y": 24, "width": 24, "height": 1,
+                "properties": { "markdown": "## DynamoDB — ScanResults Table  *(Latency · Throttles · Errors)*" }
+              },
+              {
+                "type": "metric", "x": 0, "y": 25, "width": 8, "height": 6,
+                "properties": {
+                  "title": "Request Latency (ms)",
+                  "metrics": [
+                    ["AWS/DynamoDB","SuccessfulRequestLatency","TableName","${DynamoDBTableName}","Operation","PutItem",{"stat":"Average","label":"PutItem"}],
+                    ["AWS/DynamoDB","SuccessfulRequestLatency","TableName","${DynamoDBTableName}","Operation","UpdateItem",{"stat":"Average","label":"UpdateItem"}],
+                    ["AWS/DynamoDB","SuccessfulRequestLatency","TableName","${DynamoDBTableName}","Operation","Query",{"stat":"Average","label":"Query"}]
+                  ],
+                  "period": 300, "view": "timeSeries"
+                }
+              },
+              {
+                "type": "metric", "x": 8, "y": 25, "width": 8, "height": 6,
+                "properties": {
+                  "title": "Throttled Requests",
+                  "metrics": [["AWS/DynamoDB","ThrottledRequests","TableName","${DynamoDBTableName}",{"stat":"Sum","color":"#ff9900"}]],
+                  "period": 300, "view": "timeSeries",
+                  "annotations": {"horizontal": [{"value": 5, "label": "Alarm (>=5)", "color": "#d13212"}]}
+                }
+              },
+              {
+                "type": "metric", "x": 16, "y": 25, "width": 8, "height": 6,
+                "properties": {
+                  "title": "System Errors",
+                  "metrics": [["AWS/DynamoDB","SystemErrors","TableName","${DynamoDBTableName}",{"stat":"Sum","color":"#d13212"}]],
+                  "period": 300, "view": "timeSeries"
+                }
+              }
+            ]
+          }
+        - LambdaBFunctionName: !ImportValue
+            Fn::Sub: "${ProjectName}-${Environment}-lambda-b-function-name"
+          ScanQueueName: !ImportValue
+            Fn::Sub: "${SQSStackName}-ScanQueueName"
+          DLQName: !Select
+            - 4
+            - !Split
+              - "/"
+              - !ImportValue
+                  Fn::Sub: "${SQSStackName}-DLQUrl"
+          DynamoDBTableName: !ImportValue
+            Fn::Sub: "${DynamoDBStackName}-ScanResultsTableName"
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS topic ARN for alarm notifications
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-alert-topic-arn"
+
+  DashboardName:
+    Description: CloudWatch dashboard name
+    Value: !Sub "${ProjectName}-${Environment}-overview"
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-dashboard-name"
+
+  DashboardUrl:
+    Description: Direct link to the CloudWatch dashboard in the AWS console
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-${Environment}-overview"
