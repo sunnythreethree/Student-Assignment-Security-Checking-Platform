@@ -348,16 +348,6 @@ body {
 .fail-icon  { font-size: 38px; color: var(--red); }
 .fail-label { font-size: 13px; font-weight: 600; color: var(--red); }
 
-.expiry-warning {
-  margin: 0 14px 14px;
-  padding: 8px 12px;
-  background: rgba(255,209,102,.1);
-  border: 1px solid rgba(255,209,102,.3);
-  border-radius: 5px;
-  font-size: 11px;
-  color: var(--yellow);
-}
-
 .btn-link {
   background: none; border: none;
   color: var(--accent); cursor: pointer;

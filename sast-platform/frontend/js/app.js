@@ -12,7 +12,6 @@ const POLL_INITIAL_MS  = 2000;
 const POLL_BACKOFF     = 1.5;
 const POLL_MAX_MS      = 30000;
 const POLL_TIMEOUT_MS  = 5 * 60 * 1000;
-const EXPIRY_WARN_SECS = 300;
 
 const LS_API_KEY = "sasc_api_key";
 
@@ -147,13 +146,6 @@ async function handleDone(statusData, apiKey) {
     return;
   }
 
-  if (statusData.report_url_expires_at) {
-    const secsLeft = statusData.report_url_expires_at - Math.floor(Date.now() / 1000);
-    if (secsLeft < EXPIRY_WARN_SECS) {
-      document.getElementById("expiry-warning").classList.remove("hidden");
-    }
-  }
-
   try {
     const reportRes = await fetch(_reportUrl);
     if (reportRes.status === 403) {
@@ -175,7 +167,6 @@ async function refreshReportLink() {
   if (!_currentScanId) return;
   const apiKey = localStorage.getItem(LS_API_KEY) || "";
   dismissError();
-  document.getElementById("expiry-warning").classList.add("hidden");
   try {
     const res  = await fetch(
       `${API_BASE_URL}/status?scan_id=${encodeURIComponent(_currentScanId)}`,
