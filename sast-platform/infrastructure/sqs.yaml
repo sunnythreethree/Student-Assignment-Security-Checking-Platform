@@ -24,7 +24,7 @@ Parameters:
 
   VisibilityTimeoutSeconds:
     Type: Number
-    Default: 300          # 5 minutes — must be >= Lambda B / ECS task timeout
+    Default: 900          # 15 minutes — must be >= Lambda B timeout (900s)
     Description: >
       Time a message is invisible after being received.
       Set this >= the maximum scan duration so that a crashed consumer
