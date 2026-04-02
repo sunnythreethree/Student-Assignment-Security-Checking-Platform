@@ -24,6 +24,7 @@ logger.setLevel(logging.INFO)
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
 sqs = boto3.client('sqs')
+s3 = boto3.client('s3')
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -61,13 +62,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             try:
                 # Parse message
                 message_body = json.loads(record['body'])
-                scan_id = message_body['scan_id']
-                code = message_body['code']
-                language = message_body['language']
-                student_id = message_body['student_id']
-                
+                scan_id      = message_body['scan_id']
+                s3_code_key  = message_body['s3_code_key']
+                language     = message_body['language']
+                student_id   = message_body['student_id']
+
                 logger.info(f"Started processing scan task - scan_id: {scan_id}, language: {language}")
-                
+
+                # Fetch code from S3
+                code = _fetch_code_from_s3(s3_bucket_name, s3_code_key)
+
                 # Execute scanning
                 result = process_scan_request(
                     scan_id=scan_id,
@@ -75,7 +79,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     language=language,
                     student_id=student_id,
                     table=table,
-                    s3_bucket_name=s3_bucket_name
+                    s3_bucket_name=s3_bucket_name,
+                    s3_code_key=s3_code_key,
                 )
                 
                 if result['success']:
@@ -125,31 +130,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 
 def process_scan_request(scan_id: str, code: str, language: str, student_id: str,
-                        table: Any, s3_bucket_name: str) -> Dict[str, Any]:
+                        table: Any, s3_bucket_name: str,
+                        s3_code_key: str = None) -> Dict[str, Any]:
     """
-    Process single scan request
-    
-    Args:
-        scan_id: Scan task ID
-        code: Code to be scanned
-        language: Code language
-        student_id: Student ID
-        table: DynamoDB table object
-        s3_bucket_name: S3 bucket name
-        
-    Returns:
-        Processing result
+    Process single scan request.
+    Deletes the uploaded code from S3 after scan completes (success or failure).
     """
     try:
         # Step 1: Execute security scan
         logger.info(f"Starting scan - scan_id: {scan_id}")
         raw_scan_result = scan_code_with_timeout(code, language, scan_id, timeout=300)
-        
+
         # Step 2: Parse scan results
         logger.info(f"Parsing scan results - scan_id: {scan_id}")
         parsed_result = ResultParser.parse_scan_result(raw_scan_result)
         vuln_count = ResultParser.calculate_vuln_count(parsed_result)
-        
+
         # Step 3: Write to S3
         logger.info(f"Writing scan report to S3 - scan_id: {scan_id}")
         s3_key, presigned_url = write_scan_result_to_s3(
@@ -157,7 +153,7 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
             scan_id=scan_id,
             report_data=parsed_result
         )
-        
+
         # Step 4: Update DynamoDB status
         logger.info(f"Updating DynamoDB status - scan_id: {scan_id}")
         update_scan_status(
@@ -168,9 +164,12 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
             vuln_count=vuln_count,
             s3_report_key=s3_key
         )
-        
+
+        # Step 5: Delete uploaded source code — data privacy cleanup
+        _delete_uploaded_code(s3_bucket_name, s3_code_key)
+
         logger.info(f"Scan task completed - scan_id: {scan_id}, found {vuln_count} vulnerabilities")
-        
+
         return {
             'success': True,
             'scan_id': scan_id,
@@ -178,26 +177,44 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
             's3_key': s3_key,
             'presigned_url': presigned_url
         }
-        
+
     except S3WriteError as e:
-        # S3 write failed, update DynamoDB to FAILED status
         logger.error(f"S3 write failed - scan_id: {scan_id}, error: {str(e)}")
         try:
             update_scan_status(table, student_id, scan_id, 'FAILED', error_message=str(e))
         except Exception as db_error:
             logger.error(f"Failed to update failure status to DynamoDB - scan_id: {scan_id}, error: {str(db_error)}")
-        
+        _delete_uploaded_code(s3_bucket_name, s3_code_key)
         return {'success': False, 'error': f"S3 write failed: {str(e)}"}
-        
+
     except Exception as e:
-        # Other errors, also update DynamoDB to FAILED status
         logger.error(f"Scan processing failed - scan_id: {scan_id}, error: {str(e)}")
         try:
             update_scan_status(table, student_id, scan_id, 'FAILED', error_message=str(e))
         except Exception as db_error:
             logger.error(f"Failed to update failure status to DynamoDB - scan_id: {scan_id}, error: {str(db_error)}")
-        
+        _delete_uploaded_code(s3_bucket_name, s3_code_key)
         return {'success': False, 'error': str(e)}
+
+
+def _fetch_code_from_s3(bucket_name: str, s3_code_key: str) -> str:
+    """Download source code from the S3 uploads prefix."""
+    response = s3.get_object(Bucket=bucket_name, Key=s3_code_key)
+    return response['Body'].read().decode('utf-8')
+
+
+def _delete_uploaded_code(bucket_name: str, s3_code_key: str) -> None:
+    """
+    Delete uploaded source code from S3 after scanning — data privacy cleanup.
+    Non-fatal: a failure here logs a warning but does not affect the scan result.
+    """
+    if not s3_code_key:
+        return
+    try:
+        s3.delete_object(Bucket=bucket_name, Key=s3_code_key)
+        logger.info(f"Deleted uploaded code - key: {s3_code_key}")
+    except Exception as e:
+        logger.warning(f"Failed to delete uploaded code - key: {s3_code_key}, error: {str(e)}")
 
 
 def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,

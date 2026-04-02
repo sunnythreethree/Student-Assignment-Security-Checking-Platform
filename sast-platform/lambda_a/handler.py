@@ -77,6 +77,7 @@ def _handle_post_scan(event):
             student_id = clean["student_id"],
             sqs_url    = SQS_QUEUE_URL,
             table_name = DYNAMODB_TABLE,
+            s3_bucket  = S3_BUCKET,
         )
     except Exception as e:
         logger.exception("Failed to dispatch scan job")
