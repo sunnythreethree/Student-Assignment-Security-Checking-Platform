@@ -20,12 +20,12 @@ Parameters:
 
   DynamoDBTableName:
     Type: String
-    Default: sast-scans
+    Default: ScanResults
     Description: DynamoDB table name (must match dynamodb.yaml stack).
 
   S3ReportBucket:
     Type: String
-    Default: sast-reports
+    Default: sast-platform-reports
     Description: S3 bucket where scan reports are stored (used for presigned URLs).
 
   SQSStackName:

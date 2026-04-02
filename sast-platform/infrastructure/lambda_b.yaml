@@ -20,7 +20,7 @@ Parameters:
   DynamoDBTableName:
     Type: String
     Description: 'DynamoDB table name for scan status'
-    Default: 'sast-scans'
+    Default: 'ScanResults'
   
   S3BucketName:
     Type: String
