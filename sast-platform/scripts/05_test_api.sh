@@ -74,7 +74,7 @@ PAYLOAD=$(jq -n --arg code "$TEST_CODE" --arg lang "python" \
   '{"code": $code, "language": $lang}')
 
 SUBMIT_RESP=$(curl -s -w "\n%{http_code}" \
-  -X POST "$LAMBDA_URL" \
+  -X POST "$LAMBDA_URL/scan" \
   -H "Content-Type: application/json" \
   -H "X-Student-Key: $STUDENT_KEY" \
   -d "$PAYLOAD")
@@ -97,7 +97,7 @@ log "Polling for results (timeout: ${POLL_TIMEOUT}s)..."
 DEADLINE=$(( $(date +%s) + POLL_TIMEOUT ))
 STATUS="PENDING"
 
-while [[ "$STATUS" == "PENDING" ]]; do
+while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
   if [[ $(date +%s) -gt $DEADLINE ]]; then
     fail "Timed out waiting for scan to complete (>${POLL_TIMEOUT}s)"
   fi
@@ -105,7 +105,7 @@ while [[ "$STATUS" == "PENDING" ]]; do
   sleep "$POLL_INTERVAL"
 
   STATUS_RESP=$(curl -s -w "\n%{http_code}" \
-    "$LAMBDA_URL?scan_id=$SCAN_ID" \
+    "$LAMBDA_URL/status?scan_id=$SCAN_ID" \
     -H "X-Student-Key: $STUDENT_KEY")
 
   HTTP_STATUS=$(echo "$STATUS_RESP" | tail -1)
