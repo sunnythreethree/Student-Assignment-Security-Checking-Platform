@@ -137,6 +137,7 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
         s3_key, _ = write_scan_result_to_s3(
             bucket_name=s3_bucket_name,
             scan_id=scan_id,
+            student_id=student_id,
             report_data=parsed_result
         )
 
