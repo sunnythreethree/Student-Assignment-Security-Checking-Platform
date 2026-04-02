@@ -1,51 +1,41 @@
 """
-Lambda B Main Handler
-Responsibilities:
-1. Extract scan task information from SQS messages
-2. Call scanning engine for code security analysis
-3. Parse and standardize scan results
-4. Write results to S3 and update DynamoDB status
+Handles scan requests in Lambda B.
+Reads messages from SQS, runs the scan,
+saves the result to S3, and updates DynamoDB.
 """
 import json
 import os
 import logging
 import boto3
-from typing import Dict, Any, List
 from botocore.exceptions import ClientError
 
 from scanner import scan_code_with_timeout
 from result_parser import ResultParser
 from s3_writer import write_scan_result_to_s3, get_s3_bucket_from_env, S3WriteError
 
-# Configure logging
+# set up logger
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize AWS clients
+# AWS resources
 dynamodb = boto3.resource('dynamodb')
 sqs = boto3.client('sqs')
+s3 = boto3.client('s3')
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event, context):
     """
-    Lambda B main entry point
-    
-    Args:
-        event: SQS event data
-        context: Lambda runtime context
-        
-    Returns:
-        Processing result
+    Reads SQS messages and processes each scan request.
     """
     logger.info(f"Lambda B started processing SQS event: {json.dumps(event)}")
     
-    # Processing result statistics
+    # counters for this batch
     successful_count = 0
     failed_count = 0
     failed_messages = []
     
     try:
-        # Get environment variables
+        # read config from environment variables
         table_name = os.environ.get('DYNAMODB_TABLE_NAME')
         if not table_name:
             raise ValueError("Environment variable DYNAMODB_TABLE_NAME not set")
@@ -53,13 +43,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         s3_bucket_name = get_s3_bucket_from_env()
         table = dynamodb.Table(table_name)
         
-        # Process SQS messages
+        # get messages from the event
         records = event.get('Records', [])
         logger.info(f"Received {len(records)} SQS messages")
         
         for record in records:
             try:
-                # Parse message
+                # read message
                 message_body = json.loads(record['body'])
                 scan_id = message_body['scan_id']
                 code = message_body['code']
@@ -68,7 +58,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 logger.info(f"Started processing scan task - scan_id: {scan_id}, language: {language}")
                 
-                # Execute scanning
+                # run scan job
                 result = process_scan_request(
                     scan_id=scan_id,
                     code=code,
@@ -98,7 +88,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'error': error_msg
                 })
         
-        # Return processing result
+        # return summary
         result = {
             'statusCode': 200,
             'body': {
@@ -124,33 +114,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 
-def process_scan_request(scan_id: str, code: str, language: str, student_id: str,
-                        table: Any, s3_bucket_name: str) -> Dict[str, Any]:
+def process_scan_request(scan_id, code, language, student_id, table, s3_bucket_name):
     """
-    Process single scan request
-    
-    Args:
-        scan_id: Scan task ID
-        code: Code to be scanned
-        language: Code language
-        student_id: Student ID
-        table: DynamoDB table object
-        s3_bucket_name: S3 bucket name
-        
-    Returns:
-        Processing result
+    Runs one scan request and saves the result.
     """
     try:
-        # Step 1: Execute security scan
+        # run the security scan
         logger.info(f"Starting scan - scan_id: {scan_id}")
         raw_scan_result = scan_code_with_timeout(code, language, scan_id, timeout=300)
         
-        # Step 2: Parse scan results
+        # parse the scan output
         logger.info(f"Parsing scan results - scan_id: {scan_id}")
         parsed_result = ResultParser.parse_scan_result(raw_scan_result)
         vuln_count = ResultParser.calculate_vuln_count(parsed_result)
         
-        # Step 3: Write to S3
+        # save report to S3
         logger.info(f"Writing scan report to S3 - scan_id: {scan_id}")
         s3_key, presigned_url = write_scan_result_to_s3(
             bucket_name=s3_bucket_name,
@@ -158,7 +136,7 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
             report_data=parsed_result
         )
         
-        # Step 4: Update DynamoDB status
+        # update status in DynamoDB
         logger.info(f"Updating DynamoDB status - scan_id: {scan_id}")
         update_scan_status(
             table=table,
@@ -168,9 +146,12 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
             vuln_count=vuln_count,
             s3_report_key=s3_key
         )
-        
+
+        # delete uploaded source code from S3 — data privacy cleanup
+        _delete_uploaded_code(s3_bucket_name, scan_id)
+
         logger.info(f"Scan task completed - scan_id: {scan_id}, found {vuln_count} vulnerabilities")
-        
+
         return {
             'success': True,
             'scan_id': scan_id,
@@ -178,47 +159,49 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
             's3_key': s3_key,
             'presigned_url': presigned_url
         }
-        
+
     except S3WriteError as e:
-        # S3 write failed, update DynamoDB to FAILED status
+        # if saving to S3 fails, mark the scan as failed
         logger.error(f"S3 write failed - scan_id: {scan_id}, error: {str(e)}")
         try:
             update_scan_status(table, student_id, scan_id, 'FAILED', error_message=str(e))
         except Exception as db_error:
             logger.error(f"Failed to update failure status to DynamoDB - scan_id: {scan_id}, error: {str(db_error)}")
-        
+        _delete_uploaded_code(s3_bucket_name, scan_id)
         return {'success': False, 'error': f"S3 write failed: {str(e)}"}
-        
+
     except Exception as e:
-        # Other errors, also update DynamoDB to FAILED status
+        # for any other error, also mark the scan as failed
         logger.error(f"Scan processing failed - scan_id: {scan_id}, error: {str(e)}")
         try:
             update_scan_status(table, student_id, scan_id, 'FAILED', error_message=str(e))
         except Exception as db_error:
             logger.error(f"Failed to update failure status to DynamoDB - scan_id: {scan_id}, error: {str(db_error)}")
-        
+        _delete_uploaded_code(s3_bucket_name, scan_id)
         return {'success': False, 'error': str(e)}
 
 
-def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,
-                      vuln_count: int = 0, s3_report_key: str = None,
-                      error_message: str = None) -> None:
+def _delete_uploaded_code(bucket_name, scan_id):
     """
-    Update scan status in DynamoDB
-    
-    Args:
-        table: DynamoDB table object
-        student_id: Student ID
-        scan_id: Scan ID
-        status: New status (DONE, FAILED)
-        vuln_count: Vulnerability count
-        s3_report_key: S3 report key
-        error_message: Error message (only used in FAILED status)
+    Deletes the uploaded source code file from S3 after scanning.
+    Non-fatal — a cleanup failure should not affect the scan result.
+    """
+    s3_code_key = f"uploads/{scan_id}.txt"
+    try:
+        s3.delete_object(Bucket=bucket_name, Key=s3_code_key)
+        logger.info(f"Deleted uploaded code - scan_id: {scan_id}, key: {s3_code_key}")
+    except Exception as e:
+        logger.warning(f"Failed to delete uploaded code - scan_id: {scan_id}, key: {s3_code_key}, error: {str(e)}")
+
+
+def update_scan_status(table, student_id, scan_id, status, vuln_count=0, s3_report_key=None, error_message=None):
+    """
+    Updates the scan record in DynamoDB.
     """
     try:
         from datetime import datetime
         
-        # Build update expression
+        # build the update expression
         update_expression = "SET #status = :status, completed_at = :completed_at"
         expression_attribute_names = {"#status": "status"}
         expression_attribute_values = {
@@ -238,7 +221,7 @@ def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,
             update_expression += ", error_message = :error_msg"
             expression_attribute_values[":error_msg"] = error_message
         
-        # Execute update
+        # send update to DynamoDB
         table.update_item(
             Key={
                 'student_id': student_id,
@@ -259,26 +242,16 @@ def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,
         raise
 
 
-def handle_ecs_fallback(scan_id: str, code: str, language: str, student_id: str) -> Dict[str, Any]:
+def handle_ecs_fallback(scan_id, code, language, student_id):
     """
-    Handle ECS Fargate fallback logic for large files or complex scans
-    Used when Lambda memory is insufficient or execution time exceeds limit
-    
-    Args:
-        scan_id: Scan ID
-        code: Code content
-        language: Code language
-        student_id: Student ID
-        
-    Returns:
-        ECS task launch result
+    Starts an ECS task if the scan is too large for Lambda.
     """
     try:
         ecs_client = boto3.client('ecs')
         cluster_name = os.environ.get('ECS_CLUSTER_NAME', 'sast-platform-cluster')
         task_definition = os.environ.get('ECS_TASK_DEFINITION', 'sast-scanner-task')
         
-        # Launch ECS task
+        # start the ECS task
         response = ecs_client.run_task(
             cluster=cluster_name,
             taskDefinition=task_definition,
