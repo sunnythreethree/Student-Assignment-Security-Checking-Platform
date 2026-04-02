@@ -20,7 +20,7 @@ class SecurityScanner:
     def __init__(self):
         self.temp_dir = None
     
-    def scan_code(self, code: str, language: str, scan_id: str):
+    def scan_code(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
         main entry
         decide which tool to use based on language
@@ -29,12 +29,12 @@ class SecurityScanner:
             # create a temp folder to store code file；will be cleaned up after scan
             with tempfile.TemporaryDirectory() as temp_dir:
                 self.temp_dir = temp_dir
-                
+
                 # pick scanner based on language
                 if language.lower() == 'python':
-                    return self._scan_with_bandit(code, scan_id)
+                    return self._scan_with_bandit(code, scan_id, timeout)
                 elif language.lower() in ['java', 'javascript', 'js']:
-                    return self._scan_with_semgrep(code, language, scan_id)
+                    return self._scan_with_semgrep(code, language, scan_id, timeout)
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
                     
@@ -49,7 +49,7 @@ class SecurityScanner:
                 'summary': {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
             }
     
-    def _scan_with_bandit(self, code: str, scan_id: str):
+    def _scan_with_bandit(self, code: str, scan_id: str, timeout: int = 300):
         """
         Use Bandit to scan Python code
         """
@@ -73,10 +73,10 @@ class SecurityScanner:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=timeout,
                 cwd=self.temp_dir
             )
-            
+
             # bandit return code:
             # 0 -> no issue
             # 1 -> issues found
@@ -118,7 +118,7 @@ class SecurityScanner:
         except Exception as e:
             raise RuntimeError(f"Bandit scan exception: {str(e)}")
     
-    def _scan_with_semgrep(self, code: str, language: str, scan_id: str):
+    def _scan_with_semgrep(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
         use semgrep for java / js
         """
@@ -153,10 +153,10 @@ class SecurityScanner:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=timeout,
                 cwd=self.temp_dir
             )
-            
+
             # Semgrep return codes
             if result.returncode >= 2:
                 raise RuntimeError(f"Semgrep execution failed: {result.stderr}")
@@ -188,8 +188,9 @@ class SecurityScanner:
 
 def scan_code_with_timeout(code: str, language: str, scan_id: str, timeout: int = 300):
     """
-    simple wrapper for scanner
-    timeout not really enforced yet
+    Wrapper that runs the appropriate scanner and enforces a subprocess timeout.
+    The timeout is forwarded all the way to subprocess.run so the scanner process
+    is killed if it exceeds the given number of seconds.
     """
     scanner = SecurityScanner()
-    return scanner.scan_code(code, language, scan_id)
+    return scanner.scan_code(code, language, scan_id, timeout)

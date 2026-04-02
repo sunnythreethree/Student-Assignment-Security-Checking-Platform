@@ -9,7 +9,7 @@ import logging
 import boto3
 
 from scanner import scan_code_with_timeout
-from result_parser import ResultParser
+from result_parser import normalize_result
 from s3_writer import write_scan_result_to_s3, S3WriteError
 from botocore.exceptions import ClientError
 
@@ -66,6 +66,7 @@ def main():
         logger.info(f"Start scan task: {scan_id}")
 
         # fetch source code (S3 key preferred, inline env var as fallback)
+        s3_code_key  = os.environ.get("S3_CODE_KEY")
         code_content = _fetch_code(s3_bucket_name)
 
         # connect to table
@@ -78,7 +79,8 @@ def main():
             language,
             student_id,
             table,
-            s3_bucket_name
+            s3_bucket_name,
+            s3_code_key=s3_code_key,
         )
 
         if result["success"]:
@@ -93,7 +95,19 @@ def main():
         sys.exit(1)
 
 
-def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name):
+def _delete_uploaded_code(s3_bucket_name: str, s3_code_key: str) -> None:
+    """Delete uploaded source code from S3 after scanning — data privacy cleanup."""
+    if not s3_code_key:
+        return
+    try:
+        s3_client.delete_object(Bucket=s3_bucket_name, Key=s3_code_key)
+        logger.info(f"Deleted uploaded code from S3 - key: {s3_code_key}")
+    except Exception as e:
+        logger.warning(f"Failed to delete uploaded code - key: {s3_code_key}, error: {str(e)}")
+
+
+def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
+                     s3_code_key=None):
     try:
         logger.info(f"Running scan for {scan_id}")
 
@@ -103,10 +117,17 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name)
         logger.info(f"Parsing result for {scan_id}")
 
         # format the scan result
-        parsed_result = ResultParser.parse_scan_result(raw_scan_result)
+        if 'error' in raw_scan_result:
+            raise RuntimeError(f"Scanner error: {raw_scan_result['error']}")
+        parsed_result = normalize_result(
+            tool=raw_scan_result['tool'],
+            raw_output=raw_scan_result.get('raw_output', {}),
+            scan_id=scan_id,
+            language=language,
+        )
 
         # count vulnerabilities
-        vuln_count = ResultParser.calculate_vuln_count(parsed_result)
+        vuln_count = parsed_result['vuln_count']
 
         logger.info(f"Saving to S3 for {scan_id}")
 
@@ -130,6 +151,9 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name)
 
         logger.info(f"Done: {scan_id}, found {vuln_count} issues")
 
+        # Data privacy: delete uploaded source code from S3 after successful scan
+        _delete_uploaded_code(s3_bucket_name, s3_code_key)
+
         return {
             "success": True,
             "scan_id": scan_id,
@@ -146,6 +170,7 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name)
         except Exception as db_error:
             logger.error(f"DB update also failed: {str(db_error)}")
 
+        _delete_uploaded_code(s3_bucket_name, s3_code_key)
         return {
             "success": False,
             "error": f"S3 write failed: {str(e)}"
@@ -160,6 +185,7 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name)
         except Exception as db_error:
             logger.error(f"DB update also failed: {str(db_error)}")
 
+        _delete_uploaded_code(s3_bucket_name, s3_code_key)
         return {
             "success": False,
             "error": str(e)

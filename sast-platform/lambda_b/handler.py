@@ -14,7 +14,7 @@ from typing import Dict, Any, List
 from botocore.exceptions import ClientError
 
 from scanner import scan_code_with_timeout
-from result_parser import ResultParser
+from result_parser import normalize_result
 from s3_writer import write_scan_result_to_s3, get_s3_bucket_from_env, S3WriteError
 
 # Configure logging
@@ -159,16 +159,31 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
                 f"— routing to ECS Fargate - scan_id: {scan_id}"
             )
             update_scan_status(table, student_id, scan_id, 'ECS_QUEUED')
-            return handle_ecs_fallback(scan_id, language, student_id, s3_code_key)
+            ecs_result = handle_ecs_fallback(scan_id, language, student_id, s3_code_key)
+            if not ecs_result['success']:
+                # ECS launch failed — mark FAILED so the scan doesn't stay stuck in ECS_QUEUED
+                try:
+                    update_scan_status(table, student_id, scan_id, 'FAILED',
+                                       error_message=ecs_result['error'])
+                except Exception as db_err:
+                    logger.error(f"Failed to update FAILED status after ECS launch error - scan_id: {scan_id}, error: {str(db_err)}")
+            return ecs_result
 
         # Step 1: Execute security scan
         logger.info(f"Starting scan - scan_id: {scan_id}")
         raw_scan_result = scan_code_with_timeout(code, language, scan_id, timeout=300)
-        
+
         # Step 2: Parse scan results
         logger.info(f"Parsing scan results - scan_id: {scan_id}")
-        parsed_result = ResultParser.parse_scan_result(raw_scan_result)
-        vuln_count = ResultParser.calculate_vuln_count(parsed_result)
+        if 'error' in raw_scan_result:
+            raise RuntimeError(f"Scanner error: {raw_scan_result['error']}")
+        parsed_result = normalize_result(
+            tool=raw_scan_result['tool'],
+            raw_output=raw_scan_result.get('raw_output', {}),
+            scan_id=scan_id,
+            language=language,
+        )
+        vuln_count = parsed_result['vuln_count']
         
         # Step 3: Write to S3
         logger.info(f"Writing scan report to S3 - scan_id: {scan_id}")
