@@ -148,3 +148,9 @@ Outputs:
     Value: !GetAtt ScanDeadLetterQueue.Arn
     Export:
       Name: !Sub "${AWS::StackName}-DLQArn"
+
+  DeadLetterQueueName:
+    Description: Physical name of the dead-letter queue (for CloudWatch alarm dimension)
+    Value: !GetAtt ScanDeadLetterQueue.QueueName
+    Export:
+      Name: !Sub "${AWS::StackName}-DLQName"

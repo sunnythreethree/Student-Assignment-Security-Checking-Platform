@@ -72,6 +72,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         for record in records:
             s3_code_key = None  # ensure cleanup is possible even if message parsing fails
+            scan_id     = None
+            student_id  = None
             try:
                 # Parse message
                 message_body = json.loads(record['body'])
@@ -112,6 +114,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Clean up S3 upload if we got far enough to know the key but
                 # failed before process_scan_request could handle cleanup itself.
                 _delete_uploaded_code(s3_bucket_name, s3_code_key)
+                # Mark the scan FAILED in DynamoDB so it doesn't stay PENDING forever
+                if scan_id and student_id:
+                    try:
+                        update_scan_status(table, student_id, scan_id, 'FAILED', error_message=error_msg)
+                    except Exception as db_error:
+                        logger.error(f"Failed to update FAILED status - scan_id: {scan_id}, error: {str(db_error)}")
                 failed_messages.append({
                     'record_id': record.get('messageId', 'unknown'),
                     'error': error_msg

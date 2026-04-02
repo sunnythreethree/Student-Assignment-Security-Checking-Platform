@@ -127,17 +127,13 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "${ProjectName}-${Environment}-sqs-dlq-messages"
-      AlarmDescription: "SQS DLQ has messages — scans failing after 3 retries (see issue #23)"
+      AlarmDescription: "SQS DLQ has messages — scans failing after 3 retries"
       Namespace: AWS/SQS
       MetricName: ApproximateNumberOfMessagesVisible
       Dimensions:
         - Name: QueueName
-          Value: !Select
-            - 4
-            - !Split
-              - "/"
-              - !ImportValue
-                  Fn::Sub: "${SQSStackName}-DLQUrl"
+          Value: !ImportValue
+            Fn::Sub: "${SQSStackName}-DLQName"
       Statistic: Maximum
       Period: 60
       EvaluationPeriods: 1
@@ -377,12 +373,8 @@ Resources:
             Fn::Sub: "${ProjectName}-${Environment}-lambda-b-function-name"
           ScanQueueName: !ImportValue
             Fn::Sub: "${SQSStackName}-ScanQueueName"
-          DLQName: !Select
-            - 4
-            - !Split
-              - "/"
-              - !ImportValue
-                  Fn::Sub: "${SQSStackName}-DLQUrl"
+          DLQName: !ImportValue
+            Fn::Sub: "${SQSStackName}-DLQName"
           DynamoDBTableName: !ImportValue
             Fn::Sub: "${DynamoDBStackName}-ScanResultsTableName"
 
