@@ -21,6 +21,11 @@ from s3_writer import write_scan_result_to_s3, get_s3_bucket_from_env, S3WriteEr
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Code size threshold for ECS fallback.
+# Submissions larger than this are offloaded to ECS Fargate instead of
+# being scanned inline, avoiding Lambda timeout/memory limits.
+LAMBDA_CODE_SIZE_LIMIT = 250_000  # ~250 KB
+
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
 sqs = boto3.client('sqs')
@@ -127,20 +132,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 def process_scan_request(scan_id: str, code: str, language: str, student_id: str,
                         table: Any, s3_bucket_name: str) -> Dict[str, Any]:
     """
-    Process single scan request
-    
-    Args:
-        scan_id: Scan task ID
-        code: Code to be scanned
-        language: Code language
-        student_id: Student ID
-        table: DynamoDB table object
-        s3_bucket_name: S3 bucket name
-        
-    Returns:
-        Processing result
+    Process single scan request.
+
+    If the submitted code exceeds LAMBDA_CODE_SIZE_LIMIT, the scan is
+    offloaded to ECS Fargate via handle_ecs_fallback() and this function
+    returns immediately (the ECS task will update DynamoDB when it finishes).
     """
     try:
+        # Route large submissions to ECS Fargate to avoid Lambda timeout/OOM
+        if len(code) > LAMBDA_CODE_SIZE_LIMIT:
+            logger.info(
+                f"Code size {len(code)} bytes exceeds {LAMBDA_CODE_SIZE_LIMIT} limit "
+                f"— routing to ECS Fargate - scan_id: {scan_id}"
+            )
+            update_scan_status(table, student_id, scan_id, 'ECS_QUEUED')
+            return handle_ecs_fallback(scan_id, code, language, student_id)
+
         # Step 1: Execute security scan
         logger.info(f"Starting scan - scan_id: {scan_id}")
         raw_scan_result = scan_code_with_timeout(code, language, scan_id, timeout=300)
@@ -229,11 +236,11 @@ def update_scan_status(table: Any, student_id: str, scan_id: str, status: str,
         if status == 'DONE':
             update_expression += ", vuln_count = :vuln_count"
             expression_attribute_values[":vuln_count"] = vuln_count
-            
+
             if s3_report_key:
                 update_expression += ", s3_report_key = :s3_key"
                 expression_attribute_values[":s3_key"] = s3_report_key
-                
+
         elif status == 'FAILED' and error_message:
             update_expression += ", error_message = :error_msg"
             expression_attribute_values[":error_msg"] = error_message
