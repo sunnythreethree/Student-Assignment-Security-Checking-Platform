@@ -9,7 +9,7 @@ import logging
 import boto3
 
 from scanner import scan_code_with_timeout
-from result_parser import normalize_result
+from result_parser import ResultParser
 from s3_writer import write_scan_result_to_s3, S3WriteError
 from botocore.exceptions import ClientError
 
@@ -22,39 +22,16 @@ logger = logging.getLogger()
 # before the scan is attempted, with the full list of missing variables.
 # ---------------------------------------------------------------------------
 _REQUIRED_ENV = [
-    "SCAN_ID", "STUDENT_ID", "LANGUAGE",
+    "SCAN_ID", "STUDENT_ID", "LANGUAGE", "CODE_CONTENT",
     "DYNAMODB_TABLE_NAME", "S3_BUCKET_NAME",
 ]
-_missing_env = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
-if _missing_env:
-    logger.error("Missing required environment variables: %s", _missing_env)
+_missing = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+if _missing:
+    logger.error("Missing required environment variables: %s", _missing)
     sys.exit(1)
 
-# connect to DynamoDB and S3
+# connect to DynamoDB
 dynamodb = boto3.resource("dynamodb")
-s3_client = boto3.client("s3")
-
-
-def _fetch_code(s3_bucket_name: str) -> str:
-    """
-    Resolve the source code to scan.
-
-    Priority:
-    1. S3_CODE_KEY env var — code was uploaded to S3 (S3-staging path, issue #14).
-       Preferred for large submissions because env vars are limited to ~32 KB.
-    2. CODE_CONTENT env var — code passed inline (legacy / small submissions).
-    """
-    s3_code_key = os.environ.get("S3_CODE_KEY")
-    if s3_code_key:
-        logger.info(f"Fetching code from S3: {s3_code_key}")
-        response = s3_client.get_object(Bucket=s3_bucket_name, Key=s3_code_key)
-        return response["Body"].read().decode("utf-8")
-
-    code_content = os.environ.get("CODE_CONTENT")
-    if code_content:
-        return code_content
-
-    raise ValueError("Neither S3_CODE_KEY nor CODE_CONTENT environment variable is set")
 
 
 def main():
@@ -62,14 +39,11 @@ def main():
         scan_id        = os.environ["SCAN_ID"]
         student_id     = os.environ["STUDENT_ID"]
         language       = os.environ["LANGUAGE"]
+        code_content   = os.environ["CODE_CONTENT"]
         table_name     = os.environ["DYNAMODB_TABLE_NAME"]
         s3_bucket_name = os.environ["S3_BUCKET_NAME"]
 
         logger.info(f"Start scan task: {scan_id}")
-
-        # fetch source code (S3 key preferred, inline env var as fallback)
-        s3_code_key  = os.environ.get("S3_CODE_KEY")
-        code_content = _fetch_code(s3_bucket_name)
 
         # connect to table
         table = dynamodb.Table(table_name)
@@ -81,8 +55,7 @@ def main():
             language,
             student_id,
             table,
-            s3_bucket_name,
-            s3_code_key=s3_code_key,
+            s3_bucket_name
         )
 
         if result["success"]:
@@ -97,19 +70,7 @@ def main():
         sys.exit(1)
 
 
-def _delete_uploaded_code(s3_bucket_name: str, s3_code_key: str) -> None:
-    """Delete uploaded source code from S3 after scanning — data privacy cleanup."""
-    if not s3_code_key:
-        return
-    try:
-        s3_client.delete_object(Bucket=s3_bucket_name, Key=s3_code_key)
-        logger.info(f"Deleted uploaded code from S3 - key: {s3_code_key}")
-    except Exception as e:
-        logger.warning(f"Failed to delete uploaded code - key: {s3_code_key}, error: {str(e)}")
-
-
-def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
-                     s3_code_key=None):
+def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name):
     try:
         logger.info(f"Running scan for {scan_id}")
 
@@ -119,17 +80,10 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
         logger.info(f"Parsing result for {scan_id}")
 
         # format the scan result
-        if 'error' in raw_scan_result:
-            raise RuntimeError(f"Scanner error: {raw_scan_result['error']}")
-        parsed_result = normalize_result(
-            tool=raw_scan_result['tool'],
-            raw_output=raw_scan_result.get('raw_output', {}),
-            scan_id=scan_id,
-            language=language,
-        )
+        parsed_result = ResultParser.parse_scan_result(raw_scan_result)
 
         # count vulnerabilities
-        vuln_count = parsed_result['vuln_count']
+        vuln_count = ResultParser.calculate_vuln_count(parsed_result)
 
         logger.info(f"Saving to S3 for {scan_id}")
 
@@ -153,9 +107,6 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
 
         logger.info(f"Done: {scan_id}, found {vuln_count} issues")
 
-        # Data privacy: delete uploaded source code from S3 after successful scan
-        _delete_uploaded_code(s3_bucket_name, s3_code_key)
-
         return {
             "success": True,
             "scan_id": scan_id,
@@ -172,7 +123,6 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
         except Exception as db_error:
             logger.error(f"DB update also failed: {str(db_error)}")
 
-        _delete_uploaded_code(s3_bucket_name, s3_code_key)
         return {
             "success": False,
             "error": f"S3 write failed: {str(e)}"
@@ -187,7 +137,6 @@ def process_ecs_scan(scan_id, code, language, student_id, table, s3_bucket_name,
         except Exception as db_error:
             logger.error(f"DB update also failed: {str(db_error)}")
 
-        _delete_uploaded_code(s3_bucket_name, s3_code_key)
         return {
             "success": False,
             "error": str(e)
