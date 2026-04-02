@@ -21,7 +21,7 @@ if _missing:
     raise RuntimeError(f"Required scanner binaries not found in PATH: {_missing}")
 
 from scanner import scan_code_with_timeout
-from result_parser import ResultParser
+from result_parser import normalize_result
 from s3_writer import write_scan_result_to_s3, get_s3_bucket_from_env, S3WriteError
 
 # Configure logging
@@ -66,6 +66,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info(f"Received {len(records)} SQS messages")
         
         for record in records:
+            s3_code_key = None  # ensure cleanup is possible even if message parsing fails
             try:
                 # Parse message
                 message_body = json.loads(record['body'])
@@ -87,7 +88,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     s3_bucket_name=s3_bucket_name,
                     s3_code_key=s3_code_key,
                 )
-                
+
                 if result['success']:
                     successful_count += 1
                     logger.info(f"Scan task completed - scan_id: {scan_id}")
@@ -98,11 +99,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'error': result['error']
                     })
                     logger.error(f"Scan task failed - scan_id: {scan_id}, error: {result['error']}")
-                    
+
             except Exception as e:
                 failed_count += 1
                 error_msg = f"Failed to process SQS message: {str(e)}"
                 logger.error(error_msg)
+                # Clean up S3 upload if we got far enough to know the key but
+                # failed before process_scan_request could handle cleanup itself.
+                _delete_uploaded_code(s3_bucket_name, s3_code_key)
                 failed_messages.append({
                     'record_id': record.get('messageId', 'unknown'),
                     'error': error_msg
@@ -156,8 +160,15 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
 
         # Step 3: Parse scan results
         logger.info(f"Parsing scan results - scan_id: {scan_id}")
-        parsed_result = ResultParser.parse_scan_result(raw_scan_result)
-        vuln_count = ResultParser.calculate_vuln_count(parsed_result)
+        if 'error' in raw_scan_result:
+            raise RuntimeError(f"Scanner error: {raw_scan_result['error']}")
+        parsed_result = normalize_result(
+            tool=raw_scan_result['tool'],
+            raw_output=raw_scan_result.get('raw_output', {}),
+            scan_id=scan_id,
+            language=language,
+        )
+        vuln_count = parsed_result['vuln_count']
 
         # Step 4: Write report to S3
         logger.info(f"Writing scan report to S3 - scan_id: {scan_id}")
