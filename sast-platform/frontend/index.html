@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Assignment Security Checker</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="page-wrapper">
+    <header>
+      <h1>Student Assignment Security Checker</h1>
+    </header>
+
+    <main>
+      <!-- Error banner -->
+      <div id="error-banner" class="error-banner hidden" role="alert">
+        <span id="error-message"></span>
+        <button class="dismiss-btn" onclick="dismissError()">✕</button>
+      </div>
+
+      <!-- Submission form -->
+      <section class="card" id="submit-section">
+        <h2>Submit Code for Scanning</h2>
+
+        <div class="form-group">
+          <label for="api-key">API Key (X-Student-Key)</label>
+          <input
+            type="text"
+            id="api-key"
+            placeholder="Enter your student API key..."
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="language">Language</label>
+          <select id="language">
+            <option value="">— Select language —</option>
+            <option value="python">Python</option>
+            <option value="java">Java</option>
+            <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
+            <option value="go">Go</option>
+            <option value="ruby">Ruby</option>
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="code">Code</label>
+          <textarea
+            id="code"
+            rows="12"
+            placeholder="Paste your code here..."
+          ></textarea>
+        </div>
+
+        <button id="submit-btn" class="btn-primary" onclick="handleSubmit()">
+          Scan Code
+        </button>
+      </section>
+
+      <!-- Status area (hidden until submission) -->
+      <section class="card hidden" id="status-section">
+        <h2>Scan Status</h2>
+        <div class="status-row">
+          <span class="label">Scan ID:</span>
+          <code id="status-scan-id">—</code>
+        </div>
+        <div class="status-row">
+          <span class="label">Status:</span>
+          <span id="status-text">Pending...</span>
+          <span id="spinner" class="spinner" aria-label="Loading"></span>
+        </div>
+        <div id="expiry-warning" class="expiry-warning hidden">
+          ⚠️ Download link will expire soon.
+          <button class="btn-link" onclick="refreshReportLink()">Refresh link</button>
+        </div>
+      </section>
+
+      <!-- Results area — rendered by results.js -->
+      <section class="card hidden" id="results-section">
+        <h2>Scan Results</h2>
+        <div id="results"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="js/results.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
