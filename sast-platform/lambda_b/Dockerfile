@@ -43,21 +43,23 @@ COPY --from=semgrep-builder /usr/local/lib/python3.12/site-packages /usr/local/l
 COPY --from=bandit-builder /usr/local/bin/bandit /usr/local/bin/bandit
 COPY --from=bandit-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
-# Install additional Python dependencies
+# Install additional Python dependencies + Lambda Runtime Interface Client
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    awslambdaric \
+    && rm /tmp/requirements.txt
 
-# Create application directory
-WORKDIR /app
+# Lambda requires app code in /var/task
+WORKDIR /var/task
 
 # Copy application code
 COPY . .
 
-# Change ownership to scanner user
-RUN chown -R scanner:scanner /app
+# Create temp directory for scanning (writable by all users)
+RUN mkdir -p /tmp/scanner && chmod 777 /tmp/scanner
 
-# Create temp directory for scanning
-RUN mkdir -p /tmp/scanner && chown -R scanner:scanner /tmp/scanner
+# Change ownership to scanner user
+RUN chown -R scanner:scanner /var/task
 
 # Switch to non-root user
 USER scanner
@@ -65,9 +67,11 @@ USER scanner
 # Set up PATH to ensure tools are accessible
 ENV PATH="/usr/local/bin:${PATH}"
 
-# Health check
+# Health check (used by ECS; Lambda ignores it)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import subprocess; subprocess.run(['bandit', '--version'], check=True); subprocess.run(['semgrep', '--version'], check=True)" || exit 1
 
-# Default command for ECS tasks
-CMD ["python", "ecs_handler.py"]
+# Lambda entry point via awslambdaric
+# ECS tasks override this with: CMD ["python", "ecs_handler.py"]
+ENTRYPOINT ["/usr/local/bin/python", "-m", "awslambdaric"]
+CMD ["handler.lambda_handler"]

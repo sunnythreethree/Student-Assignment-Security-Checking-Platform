@@ -25,6 +25,10 @@ Parameters:
   S3BucketName:
     Type: String
     Description: 'S3 bucket name for scan reports'
+
+  ImageUri:
+    Type: String
+    Description: 'ECR image URI for Lambda B container (e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/sast-scanner:latest)'
   
   ECSClusterName:
     Type: String
@@ -63,18 +67,14 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # Lambda B Function
+  # Lambda B Function (container image — avoids 250MB zip size limit for semgrep/bandit)
   LambdaBFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: !Sub '${ProjectName}-${Environment}-scanner'
-      Runtime: python3.11
-      Handler: handler.lambda_handler
+      PackageType: Image
+      ImageUri: !Ref ImageUri
       Role: arn:aws:iam::891377348481:role/LabRole
-      Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-              return {"statusCode": 200, "body": "Lambda B placeholder"}
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName

@@ -8,10 +8,17 @@ Responsibilities:
 """
 import json
 import os
+import shutil
 import logging
 import boto3
 from typing import Dict, Any, List
 from botocore.exceptions import ClientError
+
+# Fail fast at container startup if scanner binaries are missing.
+# This surfaces misconfigured images immediately rather than at scan time.
+_missing = [tool for tool in ("bandit", "semgrep") if not shutil.which(tool)]
+if _missing:
+    raise RuntimeError(f"Required scanner binaries not found in PATH: {_missing}")
 
 from scanner import scan_code_with_timeout
 from result_parser import ResultParser
