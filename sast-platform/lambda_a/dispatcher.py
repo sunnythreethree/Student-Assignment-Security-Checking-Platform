@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 
 import boto3
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -50,14 +51,30 @@ def create_scan_job(code: str, language: str, student_id: str,
 
     try:
         # --- Write to DynamoDB (status: PENDING) ---
+        # ConditionExpression prevents overwriting an existing record if scan_id
+        # is somehow reused (defensive guard against idempotency violations).
         table = dynamodb.Table(table_name)
-        table.put_item(Item={
-            "student_id":  student_id,
-            "scan_id":     scan_id,
-            "status":      "PENDING",
-            "language":    language,
-            "created_at":  timestamp,
-        })
+        try:
+            table.put_item(
+                Item={
+                    "student_id":  student_id,
+                    "scan_id":     scan_id,
+                    "status":      "PENDING",
+                    "language":    language,
+                    "created_at":  timestamp,
+                },
+                ConditionExpression="attribute_not_exists(scan_id)",
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.warning("scan_id %s already exists — skipping duplicate write", scan_id)
+                # Clean up the S3 upload we just created — it won't be processed.
+                try:
+                    s3.delete_object(Bucket=s3_bucket, Key=s3_code_key)
+                except Exception:
+                    logger.warning("Could not clean up S3 for duplicate scan_id=%s", scan_id)
+                return scan_id
+            raise
         logger.info("DynamoDB record created: scan_id=%s student_id=%s", scan_id, student_id)
 
         # --- Send to SQS (S3 key only — no raw code to stay within 256KB limit) ---
