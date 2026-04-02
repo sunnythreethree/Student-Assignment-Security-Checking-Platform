@@ -146,6 +146,19 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
     uploaded object in S3 permanently.
     """
     try:
+        # Idempotency guard: skip if this scan was already completed or failed.
+        # SQS at-least-once delivery can redeliver the same message; we must not
+        # overwrite a finished result.
+        existing = table.get_item(
+            Key={"student_id": student_id, "scan_id": scan_id}
+        ).get("Item")
+        if existing and existing.get("status") in ("DONE", "FAILED"):
+            logger.info(
+                "scan_id %s already processed (status=%s) — skipping duplicate",
+                scan_id, existing["status"],
+            )
+            return {"success": True, "scan_id": scan_id, "skipped": True}
+
         # Step 1: Fetch source code from S3
         logger.info(f"Fetching code from S3 - scan_id: {scan_id}, key: {s3_code_key}")
         code = _fetch_code_from_s3(s3_bucket_name, s3_code_key)
