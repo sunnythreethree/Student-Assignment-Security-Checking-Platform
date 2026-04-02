@@ -5,14 +5,13 @@ CS6620 Group 9
 Tests the Lambda A → SQS → DynamoDB pipeline using moto (no real AWS needed).
 Verifies that create_scan_job():
   1. Writes a PENDING record to DynamoDB with all required fields
-  2. Enqueues an SQS message containing the correct scan payload
+  2. Uploads code to S3 (S3-staging, PR #48)
+  3. Enqueues an SQS message containing s3_code_key (not raw code)
 
 Run with:
     pytest tests/integration/test_sqs_pipeline.py -v
 """
 
-import sys
-import os
 import json
 import unittest.mock as mock
 
@@ -20,13 +19,12 @@ import boto3
 import pytest
 from moto import mock_aws
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "lambda_a"))
-
 import dispatcher
 
 REGION     = "us-east-1"
 TABLE_NAME = "ScanResults"
 QUEUE_NAME = "sast-scan-queue"
+BUCKET     = "sast-test-bucket"
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -42,14 +40,19 @@ def aws_credentials(monkeypatch):
 @pytest.fixture
 def pipeline(aws_credentials):
     """
-    Spin up a moto-backed SQS queue + DynamoDB table and patch dispatcher's
-    module-level boto3 clients to use them.
+    Spin up moto-backed SQS queue + DynamoDB table + S3 bucket and patch
+    dispatcher's module-level boto3 clients to use them.
+
+    S3 must be included because create_scan_job() uploads code to S3 before
+    writing to DynamoDB or SQS (S3-staging migration, PR #48).
     """
     with mock_aws():
         sqs_client   = boto3.client("sqs",       region_name=REGION)
         ddb_resource = boto3.resource("dynamodb", region_name=REGION)
+        s3_client    = boto3.client("s3",         region_name=REGION)
 
         queue_url = sqs_client.create_queue(QueueName=QUEUE_NAME)["QueueUrl"]
+        s3_client.create_bucket(Bucket=BUCKET)
 
         table = ddb_resource.create_table(
             TableName=TABLE_NAME,
@@ -66,10 +69,12 @@ def pipeline(aws_credentials):
         table.meta.client.get_waiter("table_exists").wait(TableName=TABLE_NAME)
 
         with mock.patch.object(dispatcher, "sqs",      sqs_client), \
-             mock.patch.object(dispatcher, "dynamodb", ddb_resource):
+             mock.patch.object(dispatcher, "dynamodb", ddb_resource), \
+             mock.patch.object(dispatcher, "s3",       s3_client):
             yield {
                 "queue_url":  queue_url,
                 "sqs_client": sqs_client,
+                "s3_client":  s3_client,
                 "table":      table,
             }
 
@@ -81,6 +86,7 @@ def _dispatch(pipeline, **kwargs):
         student_id="neu-test-001",
         sqs_url=pipeline["queue_url"],
         table_name=TABLE_NAME,
+        s3_bucket=BUCKET,
     )
     defaults.update(kwargs)
     return dispatcher.create_scan_job(**defaults)
@@ -136,6 +142,13 @@ class TestDynamoDBPipeline:
         assert _read_dynamo(pipeline, "s-multi", id1) is not None
         assert _read_dynamo(pipeline, "s-multi", id2) is not None
 
+    def test_expires_at_set_in_record(self, pipeline):
+        """TTL field must be present so stuck PENDING records auto-expire."""
+        scan_id = _dispatch(pipeline, student_id="s-db-6")
+        item = _read_dynamo(pipeline, "s-db-6", scan_id)
+        assert "expires_at" in item
+        assert int(item["expires_at"]) > 0  # DynamoDB returns Decimal, not int
+
 
 # ── SQS message tests ──────────────────────────────────────────────────────────
 
@@ -157,9 +170,13 @@ class TestSQSPipeline:
         _dispatch(pipeline, language="javascript")
         assert _receive_sqs(pipeline)["language"] == "javascript"
 
-    def test_message_has_code(self, pipeline):
+    def test_message_has_s3_code_key(self, pipeline):
+        """After S3-staging migration, SQS message carries s3_code_key, not raw code."""
         _dispatch(pipeline, code="console.log(1)")
-        assert _receive_sqs(pipeline)["code"] == "console.log(1)"
+        msg = _receive_sqs(pipeline)
+        assert "s3_code_key" in msg
+        assert msg["s3_code_key"].startswith("uploads/")
+        assert "code" not in msg
 
     def test_message_body_is_valid_json(self, pipeline):
         _dispatch(pipeline)
@@ -167,6 +184,24 @@ class TestSQSPipeline:
             QueueUrl=pipeline["queue_url"], MaxNumberOfMessages=1
         )["Messages"][0]["Body"]
         assert isinstance(json.loads(raw), dict)
+
+
+# ── S3 upload tests ────────────────────────────────────────────────────────────
+
+class TestS3Staging:
+
+    def test_code_uploaded_to_s3(self, pipeline):
+        """Code must be uploaded to S3 before the SQS message is sent."""
+        scan_id = _dispatch(pipeline, code="x = 1")
+        msg = _receive_sqs(pipeline)
+        s3_key = msg["s3_code_key"]
+        obj = pipeline["s3_client"].get_object(Bucket=BUCKET, Key=s3_key)
+        assert obj["Body"].read().decode("utf-8") == "x = 1"
+
+    def test_s3_key_matches_scan_id(self, pipeline):
+        scan_id = _dispatch(pipeline)
+        msg = _receive_sqs(pipeline)
+        assert scan_id in msg["s3_code_key"]
 
 
 # ── End-to-end pipeline consistency ───────────────────────────────────────────
@@ -185,3 +220,11 @@ class TestPipelineConsistency:
         msg  = _receive_sqs(pipeline)
         item = _read_dynamo(pipeline, "s-cross-check", returned_id)
         assert msg["student_id"] == item["student_id"] == "s-cross-check"
+
+    def test_s3_key_consistent_across_sqs_and_s3(self, pipeline):
+        """s3_code_key in SQS message must point to an actual S3 object."""
+        _dispatch(pipeline, student_id="s-s3-check")
+        msg = _receive_sqs(pipeline)
+        s3_key = msg["s3_code_key"]
+        obj = pipeline["s3_client"].get_object(Bucket=BUCKET, Key=s3_key)
+        assert obj["Body"].read()  # object exists and has content
