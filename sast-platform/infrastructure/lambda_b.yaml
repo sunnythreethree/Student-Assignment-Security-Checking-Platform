@@ -74,7 +74,7 @@ Resources:
       FunctionName: !Sub '${ProjectName}-${Environment}-scanner'
       PackageType: Image
       ImageUri: !Ref ImageUri
-      Role: arn:aws:iam::891377348481:role/LabRole
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
@@ -86,7 +86,7 @@ Resources:
       # Resource configuration for scanning workloads
       MemorySize: 3008  # Maximum Lambda memory (3GB)
       Timeout: 900      # 15 minutes (maximum Lambda timeout)
-      ReservedConcurrencyLimit: 50  # Support up to 50 concurrent scan executions
+      ReservedConcurrentExecutions: 50  # Support up to 50 concurrent scan executions
       DeadLetterQueue:
         TargetArn: !GetAtt LambdaBDLQ.Arn
       Tags:
