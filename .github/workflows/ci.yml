@@ -17,17 +17,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Lambda A: boto3 + pytest + moto (sqs, dynamodb, s3)
-      # moto[s3] is required because dispatcher.py now uploads code to S3
-      # before sending the SQS message (S3-staging pattern, issue #14).
-      - name: Install Lambda A dependencies
-        run: pip install -r sast-platform/lambda_a/requirements.txt "moto[s3]>=5.0.0"
-
-      # Lambda B: runtime deps only — bandit and semgrep are NOT installed.
-      # Unit tests mock subprocess.run so the actual scanner binaries are not
-      # needed.  Installing semgrep in CI would add ~5 min to every run.
-      - name: Install Lambda B test dependencies
-        run: pip install -r sast-platform/lambda_b/requirements-test.txt
+      # Install all test deps in a single pip invocation.
+      # Splitting into two steps caused boto3/moto module conflicts:
+      # "No module named 'boto3.dynamodb.table'; 'boto3.dynamodb' is not a package"
+      # Installing together lets pip resolve a consistent dependency set.
+      # bandit and semgrep are excluded — unit tests mock subprocess.run.
+      - name: Install test dependencies
+        run: pip install -r sast-platform/requirements-ci.txt
 
       - name: Run unit tests
         run: |

@@ -1,0 +1,15 @@
+# CI test dependencies — installed in a single pip invocation to avoid
+# boto3/moto module conflicts that occur when the two packages are installed
+# in separate steps.
+#
+# Does NOT include bandit or semgrep. Unit tests mock subprocess.run so the
+# scanner binaries are not needed; installing semgrep would add ~5 min per run.
+
+# Runtime deps (Lambda A + B, excluding scanner binaries)
+boto3>=1.34.0
+botocore>=1.31.0
+typing-extensions>=4.8.0
+
+# Test framework + AWS mocks
+pytest>=8.0.0
+moto[s3,sqs,dynamodb]>=5.0.0
