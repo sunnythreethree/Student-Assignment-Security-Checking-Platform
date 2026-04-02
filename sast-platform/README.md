@@ -138,11 +138,55 @@ Headers:
 
 ## Local Development & Testing
 
-### Unit tests (no AWS needed)
+**No AWS account needed for unit and integration tests.** All AWS calls are intercepted by [moto](https://github.com/getmoto/moto), which emulates DynamoDB, SQS, and S3 in-process.
+
+### Prerequisites
+
+| Tool | Version | Required for |
+|------|---------|-------------|
+| Python | 3.12+ | everything |
+| pip | any | installing deps |
+| bandit | `pip install bandit` | Lambda B scanner tests only |
+| semgrep | `pip install semgrep` | Lambda B scanner tests only |
+
+bandit and semgrep are **optional** — all other tests run without them. Skip scanner tests with `pytest -k "not scanner"`.
+
+### Quick Start
 
 ```bash
-pip install boto3 pytest "moto[sqs,dynamodb,s3]>=5.0.0"
-pytest tests/unit/ -v
+# 1. Install test dependencies (covers both Lambda A and B)
+pip install -r lambda_a/requirements.txt
+pip install -r lambda_b/requirements.txt
+
+# 2. Run all unit tests — no AWS, no Docker, completes in seconds
+pytest tests/unit -v
+
+# 3. Skip scanner tests if bandit/semgrep are not installed locally
+pytest tests/unit -v -k "not scanner"
+```
+
+Or use Make:
+
+```bash
+make install       # install deps for both lambdas
+make test          # all unit + integration tests
+make test-unit     # unit tests only
+make test-no-scan  # unit tests, skip scanner (no bandit/semgrep needed)
+```
+
+### Unit tests — Lambda A
+
+```bash
+pip install -r lambda_a/requirements.txt
+pytest tests/unit/test_validator.py tests/unit/test_dispatcher.py -v
+```
+
+### Unit tests — Lambda B
+
+```bash
+pip install -r lambda_b/requirements.txt
+pytest tests/unit/test_result_parser.py -v          # no external tools needed
+pytest tests/unit/test_scanner.py -v                # requires bandit + semgrep
 ```
 
 ### Integration tests (moto-backed pipeline)
@@ -164,6 +208,57 @@ pip install locust
 locust -f tests/load/locustfile.py \
   --host=https://<LAMBDA_URL> \
   --users=30 --spawn-rate=5 --run-time=2m --headless
+```
+
+### Environment Variables
+
+Unit and integration tests set all required env vars automatically inside moto fixtures — no `.env` file needed.
+
+**Lambda A**
+
+| Variable | Description |
+|----------|-------------|
+| `SQS_QUEUE_URL` | SQS queue URL |
+| `DYNAMODB_TABLE` | DynamoDB table name |
+| `S3_BUCKET` | S3 bucket for scan reports |
+
+**Lambda B**
+
+| Variable | Description |
+|----------|-------------|
+| `DYNAMODB_TABLE_NAME` | DynamoDB table name |
+| `S3_BUCKET_NAME` | S3 bucket for scan reports |
+
+### Project Structure
+
+```
+sast-platform/
+├── lambda_a/               # API handler (POST /scan, GET /status, GET /history)
+│   ├── handler.py
+│   ├── validator.py
+│   ├── dispatcher.py
+│   ├── status.py
+│   ├── auth.py             # X-Student-Key API-key authentication
+│   └── requirements.txt    # runtime + test deps (boto3, pytest, moto)
+├── lambda_b/               # Scan engine (Bandit, Semgrep, ECS fallback)
+│   ├── handler.py
+│   ├── scanner.py
+│   ├── result_parser.py
+│   ├── s3_writer.py
+│   ├── ecs_handler.py      # ECS Fargate fallback for large submissions
+│   ├── Dockerfile          # Container image (bypasses 250MB zip limit)
+│   └── requirements.txt    # runtime + test deps (bandit, semgrep, pytest, moto)
+├── frontend/               # Static HTML/CSS/JS frontend
+├── infrastructure/         # CloudFormation templates
+├── scripts/                # Sequential deploy scripts
+├── tests/
+│   ├── unit/               # Fast, moto-backed, no AWS required
+│   ├── integration/        # Service-level, moto-backed, no AWS required
+│   ├── load/               # Locust load tests — needs live stack
+│   └── e2e/                # Full flow — needs live stack
+├── pytest.ini              # Test discovery config
+├── Makefile                # Dev convenience targets
+└── README.md
 ```
 
 ---
