@@ -22,7 +22,16 @@ from history    import get_scan_history
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Environment variables — set these in the Lambda console or CloudFormation
+# ---------------------------------------------------------------------------
+# Startup environment variable validation
+# Raises RuntimeError at import time so Lambda reports Runtime.ImportModuleError
+# with the full list of missing vars — visible in CloudWatch immediately.
+# ---------------------------------------------------------------------------
+_REQUIRED_ENV = ["SQS_QUEUE_URL", "DYNAMODB_TABLE", "S3_BUCKET", "AUTH_TABLE"]
+_missing = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+if _missing:
+    raise RuntimeError(f"Missing required environment variables: {_missing}")
+
 SQS_QUEUE_URL  = os.environ["SQS_QUEUE_URL"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
 S3_BUCKET      = os.environ["S3_BUCKET"]

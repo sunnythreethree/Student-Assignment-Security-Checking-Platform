@@ -16,6 +16,20 @@ from botocore.exceptions import ClientError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
+# ---------------------------------------------------------------------------
+# Startup environment variable validation
+# Fails immediately on container start so ECS reports the error in task logs
+# before the scan is attempted, with the full list of missing variables.
+# ---------------------------------------------------------------------------
+_REQUIRED_ENV = [
+    "SCAN_ID", "STUDENT_ID", "LANGUAGE",
+    "DYNAMODB_TABLE_NAME", "S3_BUCKET_NAME",
+]
+_missing_env = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+if _missing_env:
+    logger.error("Missing required environment variables: %s", _missing_env)
+    sys.exit(1)
+
 # connect to DynamoDB and S3
 dynamodb = boto3.resource("dynamodb")
 s3_client = boto3.client("s3")
@@ -45,23 +59,11 @@ def _fetch_code(s3_bucket_name: str) -> str:
 
 def main():
     try:
-        # required info from env variables
-        scan_id    = os.environ.get("SCAN_ID")
-        student_id = os.environ.get("STUDENT_ID")
-        language   = os.environ.get("LANGUAGE")
-
-        missing = [name for name, val in [("SCAN_ID", scan_id), ("STUDENT_ID", student_id), ("LANGUAGE", language)] if not val]
-        if missing:
-            raise ValueError("Missing required environment variables: " + ", ".join(missing))
-
-        # get table and bucket names
-        table_name     = os.environ.get("DYNAMODB_TABLE_NAME")
-        s3_bucket_name = os.environ.get("S3_BUCKET_NAME")
-
-        if not table_name:
-            raise ValueError("DYNAMODB_TABLE_NAME is not set")
-        if not s3_bucket_name:
-            raise ValueError("S3_BUCKET_NAME is not set")
+        scan_id        = os.environ["SCAN_ID"]
+        student_id     = os.environ["STUDENT_ID"]
+        language       = os.environ["LANGUAGE"]
+        table_name     = os.environ["DYNAMODB_TABLE_NAME"]
+        s3_bucket_name = os.environ["S3_BUCKET_NAME"]
 
         logger.info(f"Start scan task: {scan_id}")
 

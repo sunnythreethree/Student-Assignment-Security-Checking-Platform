@@ -20,6 +20,16 @@ _missing = [tool for tool in ("bandit", "semgrep") if not shutil.which(tool)]
 if _missing:
     raise RuntimeError(f"Required scanner binaries not found in PATH: {_missing}")
 
+# ---------------------------------------------------------------------------
+# Startup environment variable validation
+# Raises RuntimeError at import time so Lambda reports Runtime.ImportModuleError
+# with the full list of missing vars — visible in CloudWatch immediately.
+# ---------------------------------------------------------------------------
+_REQUIRED_ENV = ["DYNAMODB_TABLE_NAME", "S3_BUCKET_NAME"]
+_missing_env = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+if _missing_env:
+    raise RuntimeError(f"Missing required environment variables: {_missing_env}")
+
 from scanner import scan_code_with_timeout
 from result_parser import normalize_result
 from s3_writer import write_scan_result_to_s3, get_s3_bucket_from_env, S3WriteError
