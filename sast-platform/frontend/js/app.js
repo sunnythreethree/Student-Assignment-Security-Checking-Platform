@@ -219,7 +219,7 @@ function setSubmitLoading(loading) {
   const btn = document.getElementById("submit-btn");
   const lbl = document.getElementById("btn-label");
   btn.disabled = loading;
-  lbl.textContent = loading ? "⬡ Scanning…" : "▶ Run Scan";
+  lbl.textContent = loading ? "Scanning…" : "Scan Code";
 }
 
 function resetStatus() {
