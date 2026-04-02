@@ -20,9 +20,10 @@ import dispatcher
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-REGION     = "us-east-1"
-TABLE_NAME = "ScanResults"
-QUEUE_NAME = "test-scan-queue"
+REGION      = "us-east-1"
+TABLE_NAME  = "ScanResults"
+QUEUE_NAME  = "test-scan-queue"
+BUCKET_NAME = "sast-uploads-test"
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -40,13 +41,18 @@ def aws_credentials(monkeypatch):
 @pytest.fixture
 def aws_env():
     """
-    Spin up moto-backed SQS queue and DynamoDB table, then patch the
-    module-level boto3 clients inside dispatcher.py so they use the
-    moto-backed resources.
+    Spin up moto-backed S3 bucket, SQS queue, and DynamoDB table, then patch
+    the module-level boto3 clients inside dispatcher.py so they use the
+    moto-backed resources.  S3 is required because PR #48 moved raw code out
+    of the SQS message into S3 to bypass the 256 KB limit.
     """
     with mock_aws():
-        sqs_client   = boto3.client("sqs",      region_name=REGION)
+        s3_client    = boto3.client("s3",         region_name=REGION)
+        sqs_client   = boto3.client("sqs",        region_name=REGION)
         ddb_resource = boto3.resource("dynamodb", region_name=REGION)
+
+        # Create S3 bucket
+        s3_client.create_bucket(Bucket=BUCKET_NAME)
 
         # Create SQS queue
         resp      = sqs_client.create_queue(QueueName=QUEUE_NAME)
@@ -68,12 +74,15 @@ def aws_env():
         table.meta.client.get_waiter("table_exists").wait(TableName=TABLE_NAME)
 
         # Patch module-level clients so dispatcher uses the moto-backed ones
-        with mock.patch.object(dispatcher, "sqs",      sqs_client), \
+        with mock.patch.object(dispatcher, "s3",       s3_client), \
+             mock.patch.object(dispatcher, "sqs",      sqs_client), \
              mock.patch.object(dispatcher, "dynamodb", ddb_resource):
             yield {
-                "queue_url":  queue_url,
-                "sqs_client": sqs_client,
-                "table":      table,
+                "queue_url":   queue_url,
+                "sqs_client":  sqs_client,
+                "s3_client":   s3_client,
+                "bucket_name": BUCKET_NAME,
+                "table":       table,
             }
 
 
@@ -86,6 +95,7 @@ def _call_create(aws_env, code="print(1)", language="python", student_id="neu123
         student_id=student_id,
         sqs_url=aws_env["queue_url"],
         table_name=TABLE_NAME,
+        s3_bucket=BUCKET_NAME,
     )
 
 
@@ -191,10 +201,11 @@ class TestSQSMessage:
         body = self._receive_one(aws_env)
         assert body["language"] == "javascript"
 
-    def test_message_contains_code(self, aws_env):
-        _call_create(aws_env, code="x = 42")
+    def test_message_contains_s3_code_key(self, aws_env):
+        """PR #48: raw code is staged to S3; SQS carries s3_code_key, not code."""
+        scan_id = _call_create(aws_env, code="x = 42")
         body = self._receive_one(aws_env)
-        assert body["code"] == "x = 42"
+        assert body["s3_code_key"] == f"uploads/{scan_id}.txt"
 
     def test_message_body_is_valid_json(self, aws_env):
         _call_create(aws_env)

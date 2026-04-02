@@ -28,6 +28,16 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          # Automatically delete uploaded source-code objects after 24 hours.
+          # Lambda B deletes them immediately after scanning, but this rule
+          # acts as a safety net for objects orphaned by crashes or errors.
+          - Id: DeleteUploadsAfter24h
+            Status: Enabled
+            Filter:
+              Prefix: uploads/
+            ExpirationInDays: 1
 
   ReportBucketPolicy:
     Type: AWS::S3::BucketPolicy

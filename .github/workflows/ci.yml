@@ -28,12 +28,10 @@ jobs:
       - name: Run unit tests
         run: |
           cd sast-platform
-          # test_lambda_a.py is a legacy script runner (no pytest-discoverable
-          # tests). When pytest imports it, the module-level
-          # sys.modules["boto3"] = MagicMock() corrupts real boto3 for the
-          # entire process, breaking all moto-based tests. Ignore it until it
-          # is rewritten as proper pytest (tracked in PR #37).
-          python -m pytest tests/unit/ --ignore=tests/unit/test_lambda_a.py -v --tb=short
+          # conftest.py sets collect_ignore=["test_lambda_a.py"] to prevent
+          # that script's module-level sys.modules["boto3"]=MagicMock() from
+          # corrupting moto-based tests during collection.
+          python -m pytest tests/unit/ -v --tb=short
         env:
           # moto intercepts boto3 calls — no real AWS credentials needed.
           AWS_DEFAULT_REGION: us-east-1

@@ -1,7 +1,7 @@
 """
 this module runs security scans on code
 python -> bandit
-java/javascript -> semgrep
+java/javascript/typescript/go/ruby/c/cpp -> semgrep
 """
 import json
 import os
@@ -20,7 +20,7 @@ class SecurityScanner:
     def __init__(self):
         self.temp_dir = None
     
-    def scan_code(self, code: str, language: str, scan_id: str):
+    def scan_code(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
         main entry
         decide which tool to use based on language
@@ -29,12 +29,12 @@ class SecurityScanner:
             # create a temp folder to store code file；will be cleaned up after scan
             with tempfile.TemporaryDirectory() as temp_dir:
                 self.temp_dir = temp_dir
-                
+
                 # pick scanner based on language
                 if language.lower() == 'python':
-                    return self._scan_with_bandit(code, scan_id)
-                elif language.lower() in ['java', 'javascript', 'js']:
-                    return self._scan_with_semgrep(code, language, scan_id)
+                    return self._scan_with_bandit(code, scan_id, timeout)
+                elif language.lower() in ['java', 'javascript', 'js', 'typescript', 'go', 'ruby', 'c', 'cpp']:
+                    return self._scan_with_semgrep(code, language, scan_id, timeout)
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
                     
@@ -49,7 +49,7 @@ class SecurityScanner:
                 'summary': {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
             }
     
-    def _scan_with_bandit(self, code: str, scan_id: str):
+    def _scan_with_bandit(self, code: str, scan_id: str, timeout: int = 300):
         """
         Use Bandit to scan Python code
         """
@@ -73,10 +73,10 @@ class SecurityScanner:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=timeout,
                 cwd=self.temp_dir
             )
-            
+
             # bandit return code:
             # 0 -> no issue
             # 1 -> issues found
@@ -118,9 +118,9 @@ class SecurityScanner:
         except Exception as e:
             raise RuntimeError(f"Bandit scan exception: {str(e)}")
     
-    def _scan_with_semgrep(self, code: str, language: str, scan_id: str):
+    def _scan_with_semgrep(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
-        use semgrep for java / js
+        use semgrep for java / js / typescript / go / ruby / c / cpp
         """
         print(f"starting semgrep scan {scan_id}")
         
@@ -128,10 +128,15 @@ class SecurityScanner:
         ext_map = {
             'java': '.java',
             'javascript': '.js',
-            'js': '.js'
+            'js': '.js',
+            'typescript': '.ts',
+            'go': '.go',
+            'ruby': '.rb',
+            'c': '.c',
+            'cpp': '.cpp'
         }
         
-        file_ext = ext_map.get(language.lower(), '.txt')
+        file_ext = ext_map[language.lower()]
         code_file = os.path.join(self.temp_dir, f"code_{scan_id}{file_ext}")
         
         # Write code to temp file
@@ -153,10 +158,10 @@ class SecurityScanner:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minute timeout
+                timeout=timeout,
                 cwd=self.temp_dir
             )
-            
+
             # Semgrep return codes
             if result.returncode >= 2:
                 raise RuntimeError(f"Semgrep execution failed: {result.stderr}")
@@ -188,8 +193,7 @@ class SecurityScanner:
 
 def scan_code_with_timeout(code: str, language: str, scan_id: str, timeout: int = 300):
     """
-    simple wrapper for scanner
-    timeout not really enforced yet
+    wrapper for scanner with enforced timeout passed through to subprocess calls
     """
     scanner = SecurityScanner()
-    return scanner.scan_code(code, language, scan_id)
+    return scanner.scan_code(code, language, scan_id, timeout)

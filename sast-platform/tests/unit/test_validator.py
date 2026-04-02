@@ -15,9 +15,8 @@ from validator import validate_scan_request, normalize, SUPPORTED_LANGUAGES, MAX
 
 def _valid_body(**overrides):
     base = {
-        "code":       "print('hello')",
-        "language":   "python",
-        "student_id": "neu123456",
+        "code":     "print('hello')",
+        "language": "python",
     }
     base.update(overrides)
     return base
@@ -122,27 +121,6 @@ class TestValidateScanRequest:
         assert ok is False
         assert "python" in msg.lower()
 
-    # ── student_id field ────────────────────────────────────────────────────
-
-    def test_missing_student_id_field(self):
-        body = {"code": "x=1", "language": "python"}
-        ok, msg = validate_scan_request(body)
-        assert ok is False
-        assert "student_id" in msg.lower()
-
-    def test_empty_student_id_string(self):
-        ok, msg = validate_scan_request(_valid_body(student_id=""))
-        assert ok is False
-        assert "student_id" in msg.lower()
-
-    def test_whitespace_only_student_id(self):
-        ok, msg = validate_scan_request(_valid_body(student_id="   "))
-        assert ok is False
-
-    def test_student_id_not_a_string(self):
-        ok, msg = validate_scan_request(_valid_body(student_id=99999))
-        assert ok is False
-
     # ── edge cases ──────────────────────────────────────────────────────────
 
     def test_empty_body(self):
@@ -172,21 +150,13 @@ class TestNormalize:
         result = normalize(_valid_body(language="Python"))
         assert result["language"] == "python"
 
-    def test_strips_whitespace_from_student_id(self):
-        result = normalize(_valid_body(student_id="  neu123  "))
-        assert result["student_id"] == "neu123"
-
     def test_combined_normalization(self):
-        result = normalize({
-            "code":       "  x = 1  ",
-            "language":   "JAVASCRIPT",
-            "student_id": " abc ",
-        })
+        result = normalize({"code": "  x = 1  ", "language": "JAVASCRIPT"})
         assert result["code"] == "x = 1"
         assert result["language"] == "javascript"
-        assert result["student_id"] == "abc"
 
     def test_returns_only_known_fields(self):
-        """normalize() should return exactly the three fields, no extras."""
+        """normalize() returns {code, language} only — student_id is resolved
+        from X-Student-Key header by auth.py, not from the body."""
         result = normalize(_valid_body())
-        assert set(result.keys()) == {"code", "language", "student_id"}
+        assert set(result.keys()) == {"code", "language"}

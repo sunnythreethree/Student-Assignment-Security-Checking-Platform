@@ -38,11 +38,6 @@ def validate_scan_request(body: dict) -> tuple[bool, str]:
             f"Got: '{language}'."
         )
 
-    # --- student_id field ---
-    student_id = body.get("student_id", "")
-    if not isinstance(student_id, str) or not student_id.strip():
-        return False, "Field 'student_id' is required and must be a non-empty string."
-
     return True, ""
 
 
@@ -50,9 +45,9 @@ def normalize(body: dict) -> dict:
     """
     Return a clean copy of the body with normalized field values.
     Call this only after validate_scan_request passes.
+    Note: student_id is resolved from X-Student-Key header, not from body.
     """
     return {
-        "code":       body["code"].strip(),
-        "language":   body["language"].strip().lower(),
-        "student_id": body["student_id"].strip(),
+        "code":     body["code"].strip(),
+        "language": body["language"].strip().lower(),
     }
