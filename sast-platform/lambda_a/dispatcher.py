@@ -7,6 +7,7 @@ Called after validation passes.
 """
 
 import json
+import time
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
@@ -20,6 +21,43 @@ logger.setLevel(logging.INFO)
 sqs      = boto3.client("sqs")
 dynamodb = boto3.resource("dynamodb")
 s3       = boto3.client("s3")
+
+RATE_LIMIT_PER_HOUR = 10
+
+
+def check_rate_limit(student_id: str, table_name: str,
+                     limit: int = RATE_LIMIT_PER_HOUR) -> bool:
+    """
+    Check and atomically increment the per-student hourly submission counter.
+
+    Uses a synthetic record in the ScanResults table:
+      student_id = <student_id>
+      scan_id    = "rate#<hour>"   (never conflicts with real "scan-..." IDs)
+
+    The record carries a TTL so DynamoDB cleans it up automatically after 2 hours.
+
+    Returns:
+        True  — student is within the limit, request may proceed.
+        False — limit exceeded, caller should return 429.
+    """
+    hour         = int(time.time() // 3600)
+    rate_scan_id = f"rate#{hour}"
+    expires_at   = int(time.time()) + 7200  # expire 2 hours after the window opens
+
+    table    = dynamodb.Table(table_name)
+    response = table.update_item(
+        Key={
+            "student_id": student_id,
+            "scan_id":    rate_scan_id,
+        },
+        UpdateExpression="ADD submission_count :one SET expires_at = if_not_exists(expires_at, :exp)",
+        ExpressionAttributeValues={":one": 1, ":exp": expires_at},
+        ReturnValues="UPDATED_NEW",
+    )
+    count = int(response["Attributes"]["submission_count"])
+    logger.info("Rate-limit check: student_id=%s hour=%s count=%d limit=%d",
+                student_id, hour, count, limit)
+    return count <= limit
 
 
 def create_scan_job(code: str, language: str, student_id: str,

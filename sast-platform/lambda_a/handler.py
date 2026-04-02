@@ -14,7 +14,7 @@ import logging
 import os
 
 from validator  import validate_scan_request, normalize
-from dispatcher import create_scan_job
+from dispatcher import create_scan_job, check_rate_limit
 from status     import get_scan_status
 from auth       import lookup_student
 from history    import get_scan_history
@@ -89,6 +89,16 @@ def _handle_post_scan(event):
 
     # Normalize
     clean = normalize(body)
+
+    # Rate-limit check — max RATE_LIMIT_PER_HOUR scans per student per hour
+    if not check_rate_limit(student_id, DYNAMODB_TABLE):
+        logger.warning("Rate limit exceeded: student_id=%s", student_id)
+        resp = _response(429, {
+            "error":       "Rate limit exceeded. Maximum 10 scan submissions per hour.",
+            "retry_after": 3600,
+        })
+        resp["headers"]["Retry-After"] = "3600"
+        return resp
 
     # Dispatch
     try:

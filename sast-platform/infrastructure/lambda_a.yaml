@@ -50,6 +50,22 @@ Parameters:
     Default: 256
     Description: Lambda memory in MB.
 
+  ReservedConcurrency:
+    Type: Number
+    Default: 10
+    Description: >
+      Maximum concurrent Lambda A executions (global DoS guard).
+      Set to 0 to use unreserved concurrency (no explicit limit).
+      Independent of per-student rate limiting enforced in code.
+
+# ---------------------------------------------------------------------------
+# Conditions
+# ---------------------------------------------------------------------------
+Conditions:
+  # When ReservedConcurrency is 0 the property is omitted entirely, which
+  # leaves Lambda A on the account-level unreserved concurrency pool.
+  HasReservedConcurrency: !Not [!Equals [!Ref ReservedConcurrency, 0]]
+
 # ---------------------------------------------------------------------------
 # Resources
 # ---------------------------------------------------------------------------
@@ -76,6 +92,10 @@ Resources:
           DYNAMODB_TABLE: !Ref DynamoDBTableName
           S3_BUCKET: !Ref S3ReportBucket
           AUTH_TABLE: !Ref AuthTableName
+      ReservedConcurrentExecutions: !If
+        - HasReservedConcurrency
+        - !Ref ReservedConcurrency
+        - !Ref AWS::NoValue
       Tags:
         - Key: Project
           Value: sast-platform
