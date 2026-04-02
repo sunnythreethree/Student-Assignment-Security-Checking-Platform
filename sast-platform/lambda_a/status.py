@@ -8,10 +8,8 @@ so the frontend can fetch the report directly.
 """
 
 import logging
-import os
 
 import boto3
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -23,9 +21,15 @@ s3       = boto3.client("s3")
 PRESIGNED_URL_EXPIRY = 3600  # seconds (1 hour)
 
 
-def get_scan_status(scan_id: str, table_name: str, s3_bucket: str) -> dict:
+def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: str) -> dict:
     """
-    Look up a scan record by scan_id using the GSI (scan_id-index).
+    Look up a scan record using the table primary key (student_id + scan_id).
+
+    Using the primary key instead of the GSI enforces ownership at the database
+    level: a student can only retrieve their own scan.  If the (student_id,
+    scan_id) pair does not exist — whether because the scan doesn't exist or
+    belongs to a different student — a ValueError is raised with the same
+    message, preventing cross-tenant enumeration.
 
     Returns a dict with:
       - status: PENDING | DONE | FAILED
@@ -35,23 +39,21 @@ def get_scan_status(scan_id: str, table_name: str, s3_bucket: str) -> dict:
       - (when DONE) vuln_count, completed_at, report_url (presigned S3 URL)
 
     Raises:
-        ValueError  if scan_id not found
+        ValueError  if scan_id not found or does not belong to student_id
         ClientError if AWS call fails
     """
     table = dynamodb.Table(table_name)
 
-    # Query the GSI — scan_id is not the primary key (student_id is)
-    response = table.query(
-        IndexName="scan_id-index",
-        KeyConditionExpression=Key("scan_id").eq(scan_id),
-        Limit=1,
+    # Primary-key lookup — enforces ownership and avoids the GSI entirely
+    response = table.get_item(
+        Key={"student_id": student_id, "scan_id": scan_id}
     )
 
-    items = response.get("Items", [])
-    if not items:
+    item = response.get("Item")
+    if not item:
+        # Same error for not-found and wrong-owner — prevents enumeration
         raise ValueError(f"scan_id '{scan_id}' not found.")
 
-    item = items[0]
     result = {
         "scan_id":    item["scan_id"],
         "status":     item["status"],

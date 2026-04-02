@@ -155,6 +155,7 @@ def process_scan_request(scan_id: str, code: str, language: str, student_id: str
         s3_key, presigned_url = write_scan_result_to_s3(
             bucket_name=s3_bucket_name,
             scan_id=scan_id,
+            student_id=student_id,
             report_data=parsed_result
         )
         

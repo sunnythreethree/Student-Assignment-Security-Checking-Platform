@@ -7,6 +7,11 @@ Parameters:
     Default: ScanResults
     Description: DynamoDB table name for scan records
 
+  AuthTableName:
+    Type: String
+    Default: StudentAuth
+    Description: DynamoDB table that maps api_key → student_id for X-Student-Key auth
+
 Resources:
   ScanResultsTable:
     Type: AWS::DynamoDB::Table
@@ -33,6 +38,20 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
+  StudentAuthTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref AuthTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: api_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: api_key
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
 Outputs:
   ScanResultsTableName:
     Description: DynamoDB table name
@@ -51,4 +70,16 @@ Outputs:
     Value: ScanIdIndex
     Export:
       Name: !Sub "${AWS::StackName}-ScanIdIndexName"
+
+  StudentAuthTableName:
+    Description: Auth table name (api_key → student_id)
+    Value: !Ref StudentAuthTable
+    Export:
+      Name: !Sub "${AWS::StackName}-StudentAuthTableName"
+
+  StudentAuthTableArn:
+    Description: Auth table ARN (grant Lambda A read access)
+    Value: !GetAtt StudentAuthTable.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-StudentAuthTableArn"
 

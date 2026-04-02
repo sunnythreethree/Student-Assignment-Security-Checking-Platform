@@ -46,72 +46,11 @@ Parameters:
     Description: 'Security group IDs for ECS tasks (comma-separated)'
     Default: ''
 
-Resources:
-  # Lambda B Execution Role
-  LambdaBExecutionRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      RoleName: !Sub '${ProjectName}-${Environment}-lambda-b-role'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole'
-      Policies:
-        - PolicyName: DynamoDBAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'dynamodb:UpdateItem'
-                  - 'dynamodb:GetItem'
-                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}'
-        - PolicyName: S3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 's3:PutObject'
-                  - 's3:PutObjectAcl'
-                  - 's3:GetObject'
-                  - 's3:GeneratePresignedUrl'
-                Resource: !Sub 'arn:aws:s3:::${S3BucketName}/reports/*'
-        - PolicyName: ECSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'ecs:RunTask'
-                  - 'ecs:DescribeTasks'
-                Resource: 
-                  - !Ref ECSTaskDefinitionArn
-                  - !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task/*'
-              - Effect: Allow
-                Action:
-                  - 'iam:PassRole'
-                Resource: '*'
-                Condition:
-                  StringEquals:
-                    'iam:PassedToService': ecs-tasks.amazonaws.com
-        - PolicyName: CloudWatchLogs
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'logs:CreateLogGroup'
-                  - 'logs:CreateLogStream'
-                  - 'logs:PutLogEvents'
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${Environment}-scanner*'
+Conditions:
+  HasSubnets: !Not [!Equals [!Join [',', !Ref SubnetIds], '']]
+  HasSecurityGroups: !Not [!Equals [!Join [',', !Ref SecurityGroupIds], '']]
 
+Resources:
   # CloudWatch Log Group for Lambda B
   LambdaBLogGroup:
     Type: 'AWS::Logs::LogGroup'
@@ -131,7 +70,7 @@ Resources:
       FunctionName: !Sub '${ProjectName}-${Environment}-scanner'
       Runtime: python3.11
       Handler: handler.lambda_handler
-      Role: !GetAtt LambdaBExecutionRole.Arn
+      Role: arn:aws:iam::891377348481:role/LabRole
       Code:
         ZipFile: |
           def lambda_handler(event, context):
@@ -142,8 +81,8 @@ Resources:
           S3_BUCKET_NAME: !Ref S3BucketName
           ECS_CLUSTER_NAME: !Ref ECSClusterName
           ECS_TASK_DEFINITION: !Ref ECSTaskDefinitionArn
-          ECS_SUBNETS: !Join [',', !Ref SubnetIds]
-          ECS_SECURITY_GROUPS: !Join [',', !Ref SecurityGroupIds]
+          ECS_SUBNETS: !If [HasSubnets, !Join [',', !Ref SubnetIds], '']
+          ECS_SECURITY_GROUPS: !If [HasSecurityGroups, !Join [',', !Ref SecurityGroupIds], '']
       # Resource configuration for scanning workloads
       MemorySize: 3008  # Maximum Lambda memory (3GB)
       Timeout: 900      # 15 minutes (maximum Lambda timeout)
@@ -267,12 +206,6 @@ Outputs:
     Value: !Ref LambdaBAlias
     Export:
       Name: !Sub '${ProjectName}-${Environment}-lambda-b-alias-arn'
-
-  LambdaBRoleArn:
-    Description: 'Lambda B Execution Role ARN'
-    Value: !GetAtt LambdaBExecutionRole.Arn
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-lambda-b-role-arn'
 
   LambdaBDLQUrl:
     Description: 'Lambda B Dead Letter Queue URL'

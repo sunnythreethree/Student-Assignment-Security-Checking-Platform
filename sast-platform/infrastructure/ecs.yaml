@@ -83,77 +83,6 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # ECS Task Execution Role
-  ECSTaskExecutionRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      RoleName: !Sub '${ProjectName}-${Environment}-ecs-execution-role'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
-      Policies:
-        - PolicyName: ECRAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'ecr:BatchCheckLayerAvailability'
-                  - 'ecr:GetDownloadUrlForLayer'
-                  - 'ecr:BatchGetImage'
-                  - 'ecr:GetAuthorizationToken'
-                Resource: '*'
-        - PolicyName: CloudWatchLogs
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'logs:CreateLogGroup'
-                  - 'logs:CreateLogStream'
-                  - 'logs:PutLogEvents'
-                  - 'logs:DescribeLogStreams'
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ProjectName}-${Environment}*'
-
-  # ECS Task Role (for application permissions)
-  ECSTaskRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      RoleName: !Sub '${ProjectName}-${Environment}-ecs-task-role'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      Policies:
-        - PolicyName: DynamoDBAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'dynamodb:UpdateItem'
-                  - 'dynamodb:GetItem'
-                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}'
-        - PolicyName: S3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 's3:PutObject'
-                  - 's3:PutObjectAcl'
-                  - 's3:GetObject'
-                Resource: !Sub 'arn:aws:s3:::${S3BucketName}/reports/*'
-
   # CloudWatch Log Group
   ECSLogGroup:
     Type: 'AWS::Logs::LogGroup'
@@ -176,8 +105,8 @@ Resources:
         - FARGATE
       Cpu: '2048'  # 2 vCPU
       Memory: '4096'  # 4 GB
-      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
-      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ExecutionRoleArn: arn:aws:iam::891377348481:role/LabRole
+      TaskRoleArn: arn:aws:iam::891377348481:role/LabRole
       ContainerDefinitions:
         - Name: scanner-container
           Image: !Ref ScannerImageUri
@@ -279,14 +208,3 @@ Outputs:
     Export:
       Name: !Sub '${ProjectName}-${Environment}-ecr-repository-uri'
 
-  TaskExecutionRoleArn:
-    Description: 'ECS Task Execution Role ARN'
-    Value: !GetAtt ECSTaskExecutionRole.Arn
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-ecs-execution-role-arn'
-
-  TaskRoleArn:
-    Description: 'ECS Task Role ARN'
-    Value: !GetAtt ECSTaskRole.Arn
-    Export:
-      Name: !Sub '${ProjectName}-${Environment}-ecs-task-role-arn'

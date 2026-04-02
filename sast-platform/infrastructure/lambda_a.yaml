@@ -35,6 +35,11 @@ Parameters:
       Name of the CloudFormation stack that deployed sqs.yaml.
       Used to import ScanQueueUrl and ScanQueueArn via Fn::ImportValue.
 
+  AuthTableName:
+    Type: String
+    Default: StudentAuth
+    Description: DynamoDB table for X-Student-Key → student_id auth lookup.
+
   LambdaTimeout:
     Type: Number
     Default: 30
@@ -70,6 +75,7 @@ Resources:
             Fn::ImportValue: !Sub "${SQSStackName}-ScanQueueUrl"
           DYNAMODB_TABLE: !Ref DynamoDBTableName
           S3_BUCKET: !Ref S3ReportBucket
+          AUTH_TABLE: !Ref AuthTableName
       Tags:
         - Key: Project
           Value: sast-platform
@@ -92,6 +98,7 @@ Resources:
           - POST
         AllowHeaders:
           - Content-Type
+          - X-Student-Key
         MaxAge: 86400
 
   # --- Permission for Function URL to invoke Lambda ------------------------

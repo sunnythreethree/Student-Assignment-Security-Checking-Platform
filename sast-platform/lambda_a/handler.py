@@ -15,6 +15,7 @@ import os
 from validator  import validate_scan_request, normalize
 from dispatcher import create_scan_job
 from status     import get_scan_status
+from auth       import lookup_student
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -23,6 +24,7 @@ logger.setLevel(logging.INFO)
 SQS_QUEUE_URL  = os.environ["SQS_QUEUE_URL"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
 S3_BUCKET      = os.environ["S3_BUCKET"]
+AUTH_TABLE     = os.environ["AUTH_TABLE"]
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +39,7 @@ def lambda_handler(event, context):
              .upper()
     )
 
-    # CORS preflight
+    # CORS preflight — no auth required
     if method == "OPTIONS":
         return _response(200, {})
 
@@ -55,13 +57,22 @@ def lambda_handler(event, context):
 # ---------------------------------------------------------------------------
 
 def _handle_post_scan(event):
+    # Authenticate — resolve X-Student-Key → student_id
+    try:
+        student_id = _resolve_student(event)
+    except Exception:
+        logger.exception("Auth table lookup failed")
+        return _response(500, {"error": "Internal error. Please try again."})
+    if not student_id:
+        return _response(401, {"error": "Missing or invalid X-Student-Key header."})
+
     # Parse body
     try:
         body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
         return _response(400, {"error": "Request body must be valid JSON."})
 
-    # Validate
+    # Validate (student_id now comes from auth, not body)
     ok, error_msg = validate_scan_request(body)
     if not ok:
         return _response(400, {"error": error_msg})
@@ -74,15 +85,15 @@ def _handle_post_scan(event):
         scan_id = create_scan_job(
             code       = clean["code"],
             language   = clean["language"],
-            student_id = clean["student_id"],
+            student_id = student_id,
             sqs_url    = SQS_QUEUE_URL,
             table_name = DYNAMODB_TABLE,
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to dispatch scan job")
         return _response(500, {"error": "Internal error. Please try again."})
 
-    logger.info("Scan job created: scan_id=%s", scan_id)
+    logger.info("Scan job created: scan_id=%s student_id=%s", scan_id, student_id)
     return _response(202, {
         "scan_id": scan_id,
         "status":  "PENDING",
@@ -95,6 +106,15 @@ def _handle_post_scan(event):
 # ---------------------------------------------------------------------------
 
 def _handle_get_status(event):
+    # Authenticate
+    try:
+        student_id = _resolve_student(event)
+    except Exception:
+        logger.exception("Auth table lookup failed")
+        return _response(500, {"error": "Internal error. Please try again."})
+    if not student_id:
+        return _response(401, {"error": "Missing or invalid X-Student-Key header."})
+
     params  = event.get("queryStringParameters") or {}
     scan_id = params.get("scan_id", "").strip()
 
@@ -104,6 +124,7 @@ def _handle_get_status(event):
     try:
         result = get_scan_status(
             scan_id    = scan_id,
+            student_id = student_id,
             table_name = DYNAMODB_TABLE,
             s3_bucket  = S3_BUCKET,
         )
@@ -117,8 +138,20 @@ def _handle_get_status(event):
 
 
 # ---------------------------------------------------------------------------
-# Helper
+# Helpers
 # ---------------------------------------------------------------------------
+
+def _resolve_student(event) -> str | None:
+    """
+    Extract X-Student-Key from request headers and resolve it to a student_id.
+    Returns None if the header is absent or the key is not found in the auth table.
+    """
+    headers = event.get("headers") or {}
+    api_key = headers.get("x-student-key", "").strip()
+    if not api_key:
+        return None
+    return lookup_student(api_key, AUTH_TABLE)
+
 
 def _response(status_code: int, body: dict) -> dict:
     return {
