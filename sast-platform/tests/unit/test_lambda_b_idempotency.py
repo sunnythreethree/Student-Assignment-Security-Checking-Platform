@@ -6,6 +6,7 @@ Covers the atomic PENDING → IN_PROGRESS transition added in issue #66.
 Uses moto to mock DynamoDB; scanner / S3 / SQS calls are patched out.
 """
 
+import os
 import shutil
 import sys
 import types
@@ -16,24 +17,26 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
-# handler.py has two module-level guards that would abort import in a test env:
+REGION     = "us-east-1"
+TABLE_NAME = "ScanResults"
+BUCKET     = "sast-reports-test"
+
+# handler.py has three module-level guards that would abort import in a test env:
 #   1. shutil.which check for bandit/semgrep binaries
-#   2. `from s3_writer import S3WriteError` — S3WriteError doesn't exist in
-#      the current s3_writer.py (stale import)
-# Stub both before importing so collection succeeds.
+#   2. s3_writer imports (S3WriteError etc.)
+#   3. env var validation (DYNAMODB_TABLE_NAME, S3_BUCKET_NAME) — added in #22
+# Stub / satisfy all three before importing so collection succeeds.
 _s3w = types.ModuleType("s3_writer")
 _s3w.write_scan_result_to_s3 = mock.MagicMock()
 _s3w.get_s3_bucket_from_env  = mock.MagicMock()
 _s3w.S3WriteError             = type("S3WriteError", (Exception,), {})
 sys.modules["s3_writer"] = _s3w
 
+os.environ.setdefault("DYNAMODB_TABLE_NAME", TABLE_NAME)
+os.environ.setdefault("S3_BUCKET_NAME", BUCKET)
+
 with mock.patch("shutil.which", return_value="/usr/bin/fake"):
     import handler as lambda_b_handler
-
-
-REGION     = "us-east-1"
-TABLE_NAME = "ScanResults"
-BUCKET     = "sast-reports-test"
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
