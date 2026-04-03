@@ -19,9 +19,10 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource("dynamodb")
 s3       = boto3.client("s3")
 
-PRESIGNED_URL_EXPIRY = 3600   # seconds (1 hour)
-SCAN_TTL_HOURS       = 1      # scans older than this are considered expired
-POLLING_INTERVAL_S   = 5      # suggested client poll interval (seconds)
+PRESIGNED_URL_EXPIRY   = 3600   # seconds (1 hour)
+SCAN_TTL_HOURS         = 1      # scans older than this are considered expired
+POLLING_INTERVAL_S     = 5      # suggested client poll interval (seconds)
+ECS_POLLING_INTERVAL_S = 30     # ECS tasks take longer — poll less aggressively
 
 
 def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: str) -> dict:
@@ -35,10 +36,11 @@ def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: s
     message, preventing cross-tenant enumeration.
 
     Returns a dict with:
-      - status: PENDING | IN_PROGRESS | DONE | FAILED
+      - status: PENDING | IN_PROGRESS | ECS_QUEUED | DONE | FAILED
       - scan_id, language, created_at
-      - (PENDING/IN_PROGRESS) retry_after_seconds, scan_expires_at  — polling hints
+      - (PENDING/IN_PROGRESS/ECS_QUEUED) retry_after_seconds, scan_expires_at
       - (DONE) vuln_count, completed_at, report_url, report_url_expires_at
+      - (FAILED) error_message, completed_at
 
     Raises:
         ValueError  if scan_id not found or does not belong to student_id
@@ -63,16 +65,24 @@ def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: s
         "created_at": item.get("created_at"),
     }
 
-    if item["status"] in ("PENDING", "IN_PROGRESS"):
+    if item["status"] in ("PENDING", "IN_PROGRESS", "ECS_QUEUED"):
         # Tell the client how long to wait before the next poll, and when to
         # give up entirely so it doesn't loop forever on a stuck scan.
-        result["retry_after_seconds"] = POLLING_INTERVAL_S
+        # ECS tasks take up to 30 min — use a longer interval to reduce noise.
+        result["retry_after_seconds"] = (
+            ECS_POLLING_INTERVAL_S if item["status"] == "ECS_QUEUED"
+            else POLLING_INTERVAL_S
+        )
 
         created_at = item.get("created_at")
         if created_at:
             created_dt = datetime.fromisoformat(created_at.rstrip("Z")).replace(tzinfo=timezone.utc)
             expires_at = created_dt + timedelta(hours=SCAN_TTL_HOURS)
             result["scan_expires_at"] = expires_at.isoformat()
+
+    elif item["status"] == "FAILED":
+        result["completed_at"]  = item.get("completed_at")
+        result["error_message"] = item.get("error_message", "Scan failed.")
 
     elif item["status"] == "DONE":
         result["vuln_count"]   = item.get("vuln_count", 0)
