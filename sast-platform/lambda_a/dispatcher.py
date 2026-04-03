@@ -150,9 +150,12 @@ def create_scan_job(code: str, language: str, student_id: str,
             try:
                 table.update_item(
                     Key={"student_id": student_id, "scan_id": scan_id},
-                    UpdateExpression="SET #status = :failed",
+                    UpdateExpression="SET #status = :failed, completed_at = :now",
                     ExpressionAttributeNames={"#status": "status"},
-                    ExpressionAttributeValues={":failed": "FAILED"},
+                    ExpressionAttributeValues={
+                        ":failed": "FAILED",
+                        ":now": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
                 logger.warning("DynamoDB record marked FAILED after SQS error: scan_id=%s", scan_id)
             except Exception:
