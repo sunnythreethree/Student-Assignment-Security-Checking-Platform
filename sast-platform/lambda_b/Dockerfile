@@ -55,6 +55,13 @@ WORKDIR /var/task
 # Copy application code
 COPY . .
 
+# Pre-download semgrep rules into the image so scans don't need outbound
+# internet access at runtime (critical for VPC deployments without NAT).
+# `--dump-config` fetches the ruleset and writes it to stdout as YAML.
+RUN mkdir -p /semgrep-rules && \
+    semgrep --config=p/owasp-top-ten --dump-config > /semgrep-rules/rules.yaml && \
+    chmod 644 /semgrep-rules/rules.yaml
+
 # Create temp directory for scanning (writable by all users)
 RUN mkdir -p /tmp/scanner && chmod 777 /tmp/scanner
 

@@ -9,17 +9,31 @@ import subprocess
 import tempfile
 import logging
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
+
+# Prefer locally-bundled rules (written into the image at build time) so the
+# container does not need outbound internet access at scan time.  Fall back to
+# the published p/owasp-top-ten ruleset if the local file is absent (e.g. local
+# development outside Docker).  Override with the SEMGREP_CONFIG env var.
+_LOCAL_RULES = "/semgrep-rules/rules.yaml"
+_SEMGREP_CONFIG = os.environ.get("SEMGREP_CONFIG") or (
+    _LOCAL_RULES if os.path.exists(_LOCAL_RULES) else "p/owasp-top-ten"
+)
+if _SEMGREP_CONFIG != _LOCAL_RULES:
+    logger.warning(
+        "Local semgrep rules not found at %s; falling back to %s (requires internet)",
+        _LOCAL_RULES, _SEMGREP_CONFIG,
+    )
 
 
 class SecurityScanner:
     """
     wrapper class to handle different scanners
     """
-    
+
     def __init__(self):
         self.temp_dir = None
-    
+
     def scan_code(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
         main entry
@@ -37,7 +51,7 @@ class SecurityScanner:
                     return self._scan_with_semgrep(code, language, scan_id, timeout)
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
-                    
+
         except Exception as e:
             logger.error(f"Scan failed - scan_id: {scan_id}, error: {str(e)}")
             return {
@@ -48,27 +62,27 @@ class SecurityScanner:
                 'findings': [],
                 'summary': {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
             }
-    
+
     def _scan_with_bandit(self, code: str, scan_id: str, timeout: int = 300):
         """
         Use Bandit to scan Python code
         """
-        print(f"starting bandit scan {scan_id}")
-        
+        logger.info("starting bandit scan %s", scan_id)
+
         # write code in temp python file
         python_file = os.path.join(self.temp_dir, f"code_{scan_id}.py")
         with open(python_file, 'w', encoding='utf-8') as f:
             f.write(code)
-        
+
         try:
-            # Run Bandit 
+            # Run Bandit
             cmd = [
                 'bandit',
                 '-r', python_file,
                 '-f', 'json',
                 '--silent'  # Reduce output noise
             ]
-            
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -83,7 +97,7 @@ class SecurityScanner:
             # >=2 -> error
             if result.returncode >= 2:
                 raise RuntimeError(f"Bandit execution failed: {result.stderr}")
-            
+
             # gets JSON output
             if result.stdout.strip():
                 bandit_output = json.loads(result.stdout)
@@ -99,9 +113,9 @@ class SecurityScanner:
                         "SEVERITY.LOW": 0
                     }
                 }
-            
-            print(f"bandit done, issues: {len(bandit_output.get('results', []))}")
-            
+
+            logger.info("bandit done, issues: %d", len(bandit_output.get('results', [])))
+
             return {
                 'scan_id': scan_id,
                 'language': 'python',
@@ -110,20 +124,20 @@ class SecurityScanner:
                 'findings': bandit_output.get('results', []),
                 'metrics': bandit_output.get('metrics', {})
             }
-            
+
         except subprocess.TimeoutExpired:
             raise RuntimeError("Bandit scan timeout")
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Bandit output failed: {str(e)}")
         except Exception as e:
             raise RuntimeError(f"Bandit scan exception: {str(e)}")
-    
+
     def _scan_with_semgrep(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
         use semgrep for java / js / typescript / go / ruby / c / cpp
         """
-        print(f"starting semgrep scan {scan_id}")
-        
+        logger.info("starting semgrep scan %s (config: %s)", scan_id, _SEMGREP_CONFIG)
+
         # Decide file extension based on language
         ext_map = {
             'java': '.java',
@@ -135,25 +149,25 @@ class SecurityScanner:
             'c': '.c',
             'cpp': '.cpp'
         }
-        
+
         file_ext = ext_map[language.lower()]
         code_file = os.path.join(self.temp_dir, f"code_{scan_id}{file_ext}")
-        
+
         # Write code to temp file
         with open(code_file, 'w', encoding='utf-8') as f:
             f.write(code)
-        
+
         try:
-            # Run Semgrep
+            # Run Semgrep using locally-bundled rules (see _SEMGREP_CONFIG above)
             cmd = [
                 'semgrep',
-                '--config=auto',   # Use auto ruleset
+                f'--config={_SEMGREP_CONFIG}',
                 '--json',          # JSON output
                 '--quiet',         # Reduce output noise
                 '--no-git-ignore', # Ignore .gitignore
                 code_file
             ]
-            
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -171,10 +185,10 @@ class SecurityScanner:
                 semgrep_output = json.loads(result.stdout)
             else:
                 semgrep_output = {"results": []}
-            
+
             results = semgrep_output.get('results', [])
-            print(f"semgrep done, issues: {len(results)}")
-            
+            logger.info("semgrep done, issues: %d", len(results))
+
             return {
                 'scan_id': scan_id,
                 'language': language,
@@ -182,7 +196,7 @@ class SecurityScanner:
                 'raw_output': semgrep_output,
                 'findings': results
             }
-            
+
         except subprocess.TimeoutExpired:
             raise RuntimeError("Semgrep scan timed out")
         except json.JSONDecodeError as e:
