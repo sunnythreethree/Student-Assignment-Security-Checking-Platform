@@ -44,7 +44,13 @@ def get_scan_history(student_id: str, table_name: str) -> list:
         KeyConditionExpression=Key("student_id").eq(student_id),
         Limit=MAX_HISTORY_ITEMS,
     )
-    items = response.get("Items", [])
+    # Filter out synthetic rate-limit records (scan_id starts with "rate#")
+    # before formatting — they have no "status"/"language"/"created_at" fields
+    # and cause a KeyError in _format_item().
+    items = [
+        i for i in response.get("Items", [])
+        if not i.get("scan_id", "").startswith("rate#")
+    ]
 
     # scan_id is not time-ordered, so sort by created_at in Python
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
