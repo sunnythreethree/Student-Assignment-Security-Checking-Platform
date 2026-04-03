@@ -52,35 +52,38 @@ s3 = boto3.client('s3')
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Lambda B main entry point
-    
+
+    Returns the batchItemFailures format required by SQS ReportBatchItemFailures.
+    Any record whose messageId appears in the list will be retried by SQS (up to
+    MaxReceiveCount times before landing on the DLQ).  Records that are NOT in
+    the list are deleted from the queue — SQS treats them as successfully processed.
+
     Args:
         event: SQS event data
         context: Lambda runtime context
-        
+
     Returns:
-        Processing result
+        {"batchItemFailures": [{"itemIdentifier": <messageId>}, ...]}
     """
     logger.info(f"Lambda B started processing SQS event: {json.dumps(event)}")
-    
-    # Processing result statistics
-    successful_count = 0
-    failed_count = 0
-    failed_messages = []
-    
+
+    records = event.get('Records', [])
+    # Collect messageIds that should be retried by SQS.
+    failed_item_ids: List[str] = []
+
     try:
         # Get environment variables
         table_name = os.environ.get('DYNAMODB_TABLE_NAME')
         if not table_name:
             raise ValueError("Environment variable DYNAMODB_TABLE_NAME not set")
-        
+
         s3_bucket_name = get_s3_bucket_from_env()
         table = dynamodb.Table(table_name)
-        
-        # Process SQS messages
-        records = event.get('Records', [])
+
         logger.info(f"Received {len(records)} SQS messages")
-        
+
         for record in records:
+            message_id  = record['messageId']
             s3_code_key = None  # ensure cleanup is possible even if message parsing fails
             scan_id     = None
             student_id  = None
@@ -107,18 +110,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
 
                 if result['success']:
-                    successful_count += 1
                     logger.info(f"Scan task completed - scan_id: {scan_id}")
                 else:
-                    failed_count += 1
-                    failed_messages.append({
-                        'scan_id': scan_id,
-                        'error': result['error']
-                    })
+                    # Tell SQS to retry this message.  On retry, the idempotency
+                    # guard in process_scan_request will skip scans already marked
+                    # DONE or FAILED, so retrying a permanently-failed scan is safe.
+                    failed_item_ids.append(message_id)
                     logger.error(f"Scan task failed - scan_id: {scan_id}, error: {result['error']}")
 
             except Exception as e:
-                failed_count += 1
                 error_msg = f"Failed to process SQS message: {str(e)}"
                 logger.error(error_msg)
                 # Clean up S3 upload if we got far enough to know the key but
@@ -130,35 +130,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         update_scan_status(table, student_id, scan_id, 'FAILED', error_message=error_msg)
                     except Exception as db_error:
                         logger.error(f"Failed to update FAILED status - scan_id: {scan_id}, error: {str(db_error)}")
-                failed_messages.append({
-                    'record_id': record.get('messageId', 'unknown'),
-                    'error': error_msg
-                })
-        
-        # Return processing result
-        result = {
-            'statusCode': 200,
-            'body': {
-                'total_messages': len(records),
-                'successful': successful_count,
-                'failed': failed_count,
-                'failed_messages': failed_messages
-            }
-        }
-        
-        logger.info(f"Lambda B processing completed - successful: {successful_count}, failed: {failed_count}")
-        return result
-        
+                failed_item_ids.append(message_id)
+
+        successful_count = len(records) - len(failed_item_ids)
+        logger.info(f"Lambda B processing completed - successful: {successful_count}, failed: {len(failed_item_ids)}")
+
     except Exception as e:
+        # Setup failed (e.g. missing env var) — mark every record as failed so
+        # SQS retries the whole batch.
         logger.error(f"Lambda B processing exception: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': {
-                'error': str(e),
-                'successful': successful_count,
-                'failed': failed_count + 1
-            }
-        }
+        failed_item_ids = [r['messageId'] for r in records]
+
+    return {
+        "batchItemFailures": [
+            {"itemIdentifier": mid} for mid in failed_item_ids
+        ]
+    }
 
 
 def process_scan_request(scan_id: str, language: str, student_id: str,
