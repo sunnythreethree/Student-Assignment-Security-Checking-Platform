@@ -91,6 +91,7 @@ def create_scan_job(code: str, language: str, student_id: str,
     )
     logger.info("Code uploaded to S3: key=%s bucket=%s", s3_code_key, s3_bucket)
 
+    db_written = False  # track whether DynamoDB write succeeded
     try:
         # --- Write to DynamoDB (status: PENDING) ---
         # ConditionExpression prevents overwriting an existing record if scan_id
@@ -118,6 +119,7 @@ def create_scan_job(code: str, language: str, student_id: str,
                     logger.warning("Could not clean up S3 for duplicate scan_id=%s", scan_id)
                 return scan_id
             raise
+        db_written = True
         logger.info("DynamoDB record created: scan_id=%s student_id=%s", scan_id, student_id)
 
         # --- Send to SQS (S3 key only — no raw code to stay within 256KB limit) ---
@@ -141,6 +143,24 @@ def create_scan_job(code: str, language: str, student_id: str,
             logger.warning("S3 upload cleaned up after DynamoDB/SQS failure: key=%s", s3_code_key)
         except Exception:
             logger.exception("S3 cleanup also failed: key=%s", s3_code_key)
+
+        # If DynamoDB was written but SQS failed, mark the record FAILED so
+        # the student gets a clear error instead of a forever-PENDING scan.
+        if db_written:
+            try:
+                table.update_item(
+                    Key={"student_id": student_id, "scan_id": scan_id},
+                    UpdateExpression="SET #status = :failed, completed_at = :now",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":failed": "FAILED",
+                        ":now": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+                logger.warning("DynamoDB record marked FAILED after SQS error: scan_id=%s", scan_id)
+            except Exception:
+                logger.exception("DynamoDB FAILED update also failed: scan_id=%s", scan_id)
+
         raise
 
     return scan_id
