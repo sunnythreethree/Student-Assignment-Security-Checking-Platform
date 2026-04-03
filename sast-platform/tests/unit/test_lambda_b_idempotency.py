@@ -188,20 +188,16 @@ class TestLambdaHandlerBatchFailures:
 
     def test_failed_record_appears_in_batch_failures(self):
         """A record whose process_scan_request returns success=False must be retried."""
-        event = _make_sqs_event("msg-ok", "msg-fail")
+        event = _make_sqs_event("msg-fail", "msg-ok")
 
-        def _side_effect(**kwargs):
-            return {"success": False, "error": "oops"} if kwargs.get("scan_id") == "scan-x" else {"success": True}
-
-        # Both records share the same scan_id in this fixture, so patch returns
-        # failure on the first call and success on the second.
+        # First call (msg-fail) → failure; second call (msg-ok) → success.
         results = [{"success": False, "error": "oops"}, {"success": True}]
         with mock.patch.object(lambda_b_handler, "process_scan_request",
                                side_effect=results):
             resp = lambda_b_handler.lambda_handler(event, None)
 
-        assert {"itemIdentifier": "msg-ok"} in resp["batchItemFailures"]
-        assert {"itemIdentifier": "msg-fail"} not in resp["batchItemFailures"]
+        assert {"itemIdentifier": "msg-fail"} in resp["batchItemFailures"]
+        assert {"itemIdentifier": "msg-ok"} not in resp["batchItemFailures"]
 
     def test_exception_in_record_adds_to_batch_failures(self):
         """An unhandled exception for one record adds it to batchItemFailures."""
