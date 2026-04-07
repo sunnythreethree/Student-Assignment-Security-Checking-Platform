@@ -58,8 +58,8 @@ body {
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 18px 18px;
+  gap: 8px;
+  padding: 16px 14px 14px;
   border-bottom: 1px solid var(--border);
 }
 

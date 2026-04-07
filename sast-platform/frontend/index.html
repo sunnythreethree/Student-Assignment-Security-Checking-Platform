@@ -12,24 +12,87 @@
 
     <!-- Logo -->
     <div class="sidebar-logo">
-      <svg class="logo-shield" width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <!-- head -->
-        <circle cx="19" cy="5" r="3.2" stroke="#059669" stroke-width="1.8"/>
-        <!-- body -->
-        <line x1="19" y1="8.2" x2="19" y2="19" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-        <!-- arms: left goes to keyboard, right raised -->
-        <path d="M19 12 L11 17" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M19 12 L27 10" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-        <!-- legs -->
-        <path d="M19 19 L14 27" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M19 19 L24 27" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-        <!-- laptop screen -->
-        <rect x="5" y="17" width="14" height="10" rx="1.5" stroke="#059669" stroke-width="1.6"/>
-        <!-- laptop base -->
-        <line x1="3" y1="27" x2="21" y2="27" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-        <!-- code lines on screen -->
-        <line x1="8" y1="20.5" x2="14" y2="20.5" stroke="#059669" stroke-width="1.2" stroke-linecap="round"/>
-        <line x1="8" y1="23" x2="11" y2="23" stroke="#059669" stroke-width="1.2" stroke-linecap="round"/>
+      <!-- Top-down laptop + typing hands + mouse, sketch style -->
+      <svg class="logo-shield" width="60" height="48" viewBox="0 0 150 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Screen (trapezoid, wider at top — top-down perspective) -->
+        <path d="M18,3 L112,3 Q115,3 114,6 L98,36 L32,36 Q29,36 30,33 Z"
+              stroke="#059669" stroke-width="3" stroke-linejoin="round"/>
+        <!-- Screen bezel inner -->
+        <path d="M26,9 L104,9 L90,31 L40,31 Z"
+              stroke="#059669" stroke-width="2"/>
+
+        <!-- Keyboard body (slight trapezoid) -->
+        <path d="M30,36 L100,36 L102,74 L28,74 Z"
+              stroke="#059669" stroke-width="3" stroke-linejoin="round"/>
+
+        <!-- Key rows (4 rows of small rects) -->
+        <!-- Row 1 -->
+        <rect x="34" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="41" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="48" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="55" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="62" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="69" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="76" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="83" y="39" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <!-- Row 2 -->
+        <rect x="36" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="43" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="50" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="57" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="64" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="71" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="78" y="45" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <!-- Row 3 -->
+        <rect x="38" y="51" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="45" y="51" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="52" y="51" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="59" y="51" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="66" y="51" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="73" y="51" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <!-- Row 4 -->
+        <rect x="40" y="57" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="47" y="57" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="54" y="57" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="61" y="57" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <rect x="68" y="57" width="5" height="4" rx="1" stroke="#059669" stroke-width="1.4" fill="none"/>
+        <!-- Spacebar -->
+        <rect x="46" y="66" width="36" height="4" rx="2" stroke="#059669" stroke-width="1.4" fill="none"/>
+
+        <!-- LEFT HAND — palm coming from bottom-left, fingers up onto keys -->
+        <!-- Palm outline -->
+        <path d="M28,74 C20,76 12,80 11,88 C10,96 18,102 26,100 C30,98 33,92 35,84"
+              stroke="#059669" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <!-- Thumb -->
+        <path d="M28,74 C24,70 22,66 24,62" stroke="#059669" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <!-- Index finger -->
+        <path d="M34,76 C32,68 34,60 37,56" stroke="#059669" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <!-- Middle finger -->
+        <path d="M40,77 C39,68 41,61 44,57" stroke="#059669" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <!-- Ring finger -->
+        <path d="M46,77 C46,69 48,62 51,58" stroke="#059669" stroke-width="2" stroke-linecap="round" fill="none"/>
+
+        <!-- Mouse cable (curvy line from laptop to mouse) -->
+        <path d="M102,52 C112,50 118,44 120,38 C122,32 118,28 115,33 C112,38 118,46 124,40"
+              stroke="#059669" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+
+        <!-- Mouse body -->
+        <path d="M120,62 C115,60 111,65 111,72 C111,82 115,92 121,94 C127,96 133,90 133,80 C133,70 129,62 123,61 Z"
+              stroke="#059669" stroke-width="2.2" fill="none"/>
+        <!-- Mouse center line -->
+        <line x1="122" y1="61" x2="121" y2="75" stroke="#059669" stroke-width="1.6" stroke-linecap="round"/>
+        <!-- Mouse scroll wheel -->
+        <rect x="119" y="66" width="5" height="7" rx="2" stroke="#059669" stroke-width="1.4" fill="none"/>
+
+        <!-- RIGHT HAND on mouse -->
+        <path d="M111,78 C107,86 109,96 114,100 C120,104 128,101 131,95 C134,88 130,78 124,76"
+              stroke="#059669" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <!-- Right index finger -->
+        <path d="M117,76 C116,70 119,64 122,62" stroke="#059669" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        <!-- Right middle finger -->
+        <path d="M123,77 C123,71 125,65 127,63" stroke="#059669" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+        <!-- Right thumb -->
+        <path d="M111,80 C107,78 106,74 109,71" stroke="#059669" stroke-width="1.8" stroke-linecap="round" fill="none"/>
       </svg>
       <div>
         <div class="logo-title">SAST</div>
