@@ -41,17 +41,9 @@ Resources:
     Type: 'AWS::ECS::Cluster'
     Properties:
       ClusterName: !Sub '${ProjectName}-${Environment}-cluster'
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-        - CapacityProvider: FARGATE_SPOT
-          Weight: 4  # Prefer SPOT instances for cost savings
       ClusterSettings:
         - Name: containerInsights
-          Value: enabled
+          Value: disabled
       Tags:
         - Key: Project
           Value: !Ref ProjectName
@@ -111,6 +103,11 @@ Resources:
         - Name: scanner-container
           Image: !Ref ScannerImageUri
           Essential: true
+          # Override Lambda entrypoint to run ecs_handler.py directly in ECS
+          EntryPoint:
+            - /usr/local/bin/python
+          Command:
+            - /var/task/ecs_handler.py
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -145,37 +142,8 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # ECR Repository for Scanner Image
-  ScannerRepository:
-    Type: 'AWS::ECR::Repository'
-    Properties:
-      RepositoryName: !Sub '${ProjectName}-${Environment}-scanner'
-      ImageTagMutability: MUTABLE
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      LifecyclePolicy:
-        LifecyclePolicyText: |
-          {
-            "rules": [
-              {
-                "rulePriority": 1,
-                "description": "Keep last 10 images",
-                "selection": {
-                  "tagStatus": "any",
-                  "countType": "imageCountMoreThan",
-                  "countNumber": 10
-                },
-                "action": {
-                  "type": "expire"
-                }
-              }
-            ]
-          }
-      Tags:
-        - Key: Project
-          Value: !Ref ProjectName
-        - Key: Environment
-          Value: !Ref Environment
+  # ECR Repository already exists (created during Lambda B build process)
+  # ScannerRepository is managed externally; not created here to avoid conflicts
 
 Outputs:
   ECSClusterName:
@@ -204,7 +172,7 @@ Outputs:
 
   ECRRepositoryUri:
     Description: 'ECR Repository URI for scanner image'
-    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ScannerRepository}'
+    Value: !Ref ScannerImageUri
     Export:
       Name: !Sub '${ProjectName}-${Environment}-ecr-repository-uri'
 
