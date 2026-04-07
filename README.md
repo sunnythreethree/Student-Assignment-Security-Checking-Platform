@@ -1,6 +1,6 @@
 # SAST Platform — Student Assignment Security Checker
 
-**CS6620 Group 9** | Jingsi Zhang · Mengshan Li · Jiahua (Beibei) Wu
+**CS6620 Group 9** | Jingsi Zhang · Mengshan Li · Jiahua Wu
 
 A serverless static analysis platform on AWS. Students submit source code via a web UI; the system scans it asynchronously using Bandit (Python) and Semgrep (Java / JavaScript / TypeScript / Go / Ruby / C / C++), stores the report in S3, and returns a presigned download URL to the browser.
 
