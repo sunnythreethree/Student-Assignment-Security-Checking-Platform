@@ -14,11 +14,14 @@ import boto3
 from typing import Dict, Any, List
 from botocore.exceptions import ClientError
 
-# Fail fast at container startup if scanner binaries are missing.
-# This surfaces misconfigured images immediately rather than at scan time.
-_missing = [tool for tool in ("bandit", "semgrep") if not shutil.which(tool)]
-if _missing:
-    raise RuntimeError(f"Required scanner binaries not found in PATH: {_missing}")
+# Check scanner binaries; accept /var/task/bin/bandit for zip-based deployments.
+import sys as _sys
+_bandit_paths = [shutil.which("bandit"), os.path.join(os.path.dirname(_sys.executable), "bandit"), "/var/task/bin/bandit"]
+_bandit_found = any(p and os.path.isfile(p) for p in _bandit_paths)
+if not _bandit_found:
+    raise RuntimeError("Required scanner binary 'bandit' not found")
+if not shutil.which("semgrep"):
+    logging.getLogger(__name__).warning("Optional binary 'semgrep' not found; non-Python scans will fail")
 
 # ---------------------------------------------------------------------------
 # Startup environment variable validation

@@ -26,10 +26,15 @@ Parameters:
     Type: String
     Description: 'S3 bucket name for scan reports'
 
-  ImageUri:
+  CodeBucket:
     Type: String
-    Description: 'ECR image URI for Lambda B container (e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/sast-scanner:latest)'
-  
+    Description: 'S3 bucket containing lambda_b.zip'
+
+  CodeKey:
+    Type: String
+    Default: 'lambda_b.zip'
+    Description: 'S3 key for lambda_b deployment zip'
+
   ECSClusterName:
     Type: String
     Description: 'ECS cluster name for fallback processing'
@@ -67,13 +72,16 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # Lambda B Function (container image — avoids 250MB zip size limit for semgrep/bandit)
+  # Lambda B Function
   LambdaBFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: !Sub '${ProjectName}-${Environment}-scanner'
-      PackageType: Image
-      ImageUri: !Ref ImageUri
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
       Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
       Environment:
         Variables:
@@ -87,8 +95,6 @@ Resources:
       MemorySize: 3008  # Maximum Lambda memory (3GB)
       Timeout: 900      # 15 minutes (maximum Lambda timeout)
       ReservedConcurrentExecutions: 50  # Support up to 50 concurrent scan executions
-      DeadLetterQueue:
-        TargetArn: !GetAtt LambdaBDLQ.Arn
       Tags:
         - Key: Project
           Value: !Ref ProjectName

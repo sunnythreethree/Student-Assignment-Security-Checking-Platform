@@ -75,12 +75,13 @@ class SecurityScanner:
             f.write(code)
 
         try:
-            # Run Bandit
+            # Use python -m bandit to avoid shebang path issues in zip deployments
+            import sys
             cmd = [
-                'bandit',
+                sys.executable, '-m', 'bandit',
                 '-r', python_file,
                 '-f', 'json',
-                '--silent'  # Reduce output noise
+                '--silent'
             ]
 
             result = subprocess.run(

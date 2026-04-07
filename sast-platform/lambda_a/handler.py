@@ -209,5 +209,12 @@ def _response(status_code: int, body: dict) -> dict:
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
         },
-        "body": json.dumps(body),
+        "body": json.dumps(body, default=_json_default),
     }
+
+
+def _json_default(obj):
+    from decimal import Decimal
+    if isinstance(obj, Decimal):
+        return int(obj) if obj == obj.to_integral_value() else float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")

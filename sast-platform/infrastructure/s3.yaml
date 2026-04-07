@@ -35,8 +35,7 @@ Resources:
           # acts as a safety net for objects orphaned by crashes or errors.
           - Id: DeleteUploadsAfter24h
             Status: Enabled
-            Filter:
-              Prefix: uploads/
+            Prefix: uploads/
             ExpirationInDays: 1
 
   ReportBucketPolicy:
@@ -65,24 +64,10 @@ Resources:
         IndexDocument: index.html
         ErrorDocument: index.html
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-
-  FrontendBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref FrontendBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: PublicReadForWebsite
-            Effect: Allow
-            Principal: "*"
-            Action:
-              - s3:GetObject
-            Resource: !Sub "arn:aws:s3:::${FrontendBucket}/*"
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
 
 Outputs:
   ReportBucketNameOutput:
