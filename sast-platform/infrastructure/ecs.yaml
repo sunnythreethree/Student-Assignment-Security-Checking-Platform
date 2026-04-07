@@ -105,8 +105,8 @@ Resources:
         - FARGATE
       Cpu: '2048'  # 2 vCPU
       Memory: '4096'  # 4 GB
-      ExecutionRoleArn: arn:aws:iam::891377348481:role/LabRole
-      TaskRoleArn: arn:aws:iam::891377348481:role/LabRole
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      TaskRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
       ContainerDefinitions:
         - Name: scanner-container
           Image: !Ref ScannerImageUri

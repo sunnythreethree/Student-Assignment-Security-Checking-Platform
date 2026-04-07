@@ -177,6 +177,8 @@ deploy_stack "$STACK_LAMBDA_B" "$INFRA_DIR/lambda_b.yaml" \
   "SQSQueueArn=$SQS_QUEUE_ARN" \
   "DynamoDBTableName=$TABLE_NAME" \
   "S3BucketName=$REPORT_BUCKET" \
+  "CodeBucket=$CODE_BUCKET" \
+  "CodeKey=lambda_b.zip" \
   "ECSClusterName=" \
   "ECSTaskDefinitionArn="
 
@@ -208,6 +210,8 @@ if [[ -n "$VPC_ID" ]]; then
     "SQSQueueArn=$SQS_QUEUE_ARN" \
     "DynamoDBTableName=$TABLE_NAME" \
     "S3BucketName=$REPORT_BUCKET" \
+    "CodeBucket=$CODE_BUCKET" \
+    "CodeKey=lambda_b.zip" \
     "ECSClusterName=$ECS_CLUSTER_NAME" \
     "ECSTaskDefinitionArn=$ECS_TASK_DEF_ARN"
 else
