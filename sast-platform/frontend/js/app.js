@@ -1,6 +1,6 @@
 /**
  * app.js — Frontend logic
- * Mengshan Li | CS6620 Group 9
+ * CS6620 Group 9
  *
  * API_BASE_URL is replaced at deploy time by 04_upload_frontend.sh
  * using: sed -i "s|__LAMBDA_URL__|$LAMBDA_URL|g" app.js
@@ -12,6 +12,8 @@ const POLL_INITIAL_MS  = 2000;
 const POLL_BACKOFF     = 1.5;
 const POLL_MAX_MS      = 30000;
 const POLL_TIMEOUT_MS  = 5 * 60 * 1000;
+
+const LS_STUDENT_ID = "sasc_student_id";
 
 // Map file extension → language selector value
 const EXT_TO_LANGUAGE = {
@@ -36,24 +38,50 @@ let _reportUrl       = null;
 // ── View switching ────────────────────────────────────────────────────────────
 
 function switchView(name) {
-  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => {
+    v.classList.remove("active");
+    v.classList.add("hidden");
+  });
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
 
   const view = document.getElementById(`view-${name}`);
-  if (view) view.classList.add("active");
+  if (view) { view.classList.remove("hidden"); view.classList.add("active"); }
 
   const navItem = document.querySelector(`.nav-item[data-view="${name}"]`);
   if (navItem) navItem.classList.add("active");
 
   const title = document.getElementById("topbar-title");
-  if (title) title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+  if (title) title.textContent = name === "results" ? "Results & History" : "Scanner";
+
+  if (name === "results") loadHistory();
 }
 
-// ── Drag-and-drop ─────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Restore student ID
+  const stored = localStorage.getItem(LS_STUDENT_ID);
+  if (stored) {
+    document.getElementById("student-id").value = stored;
+    setStudentIdHint(stored);
+  }
+
+  // Save student ID on change
+  document.getElementById("student-id").addEventListener("input", e => {
+    const val = e.target.value.trim();
+    if (val) {
+      localStorage.setItem(LS_STUDENT_ID, val);
+      setStudentIdHint(val);
+    } else {
+      localStorage.removeItem(LS_STUDENT_ID);
+      document.getElementById("student-id-hint").textContent =
+        "Auto-saved · history persists across sessions";
+      document.getElementById("student-id-hint").className = "student-id-hint";
+    }
+  });
+
+  // Drag-and-drop
   const dropZone = document.getElementById("drop-zone");
-  const codeArea = document.getElementById("code");
 
   ["dragenter", "dragover"].forEach(evt =>
     dropZone.addEventListener(evt, e => {
@@ -71,29 +99,42 @@ document.addEventListener("DOMContentLoaded", () => {
     const file = e.dataTransfer.files[0];
     if (!file) return;
 
-    const ext = file.name.split(".").pop().toLowerCase();
+    const ext  = file.name.split(".").pop().toLowerCase();
     const lang = EXT_TO_LANGUAGE[ext];
-    if (lang) {
-      document.getElementById("language").value = lang;
-    } else {
-      showError(`Unsupported file type ".${ext}". Supported: ${Object.keys(EXT_TO_LANGUAGE).map(e => "."+e).join(", ")}`);
+
+    if (!lang) {
+      const supported = Object.keys(EXT_TO_LANGUAGE).map(x => "." + x).join(", ");
+      showError(`Unsupported file type ".${ext}". Supported: ${supported}`);
       return;
     }
 
+    document.getElementById("language").value = lang;
+
     const reader = new FileReader();
     reader.onload = ev => {
-      codeArea.value = ev.target.result;
+      document.getElementById("code").value = ev.target.result;
       dismissError();
     };
     reader.readAsText(file);
   });
 });
 
+function setStudentIdHint(id) {
+  const hint = document.getElementById("student-id-hint");
+  hint.textContent = `Saved as "${id}" · history will load automatically`;
+  hint.className = "student-id-hint saved";
+}
+
+function getStudentId() {
+  return document.getElementById("student-id").value.trim() || "anonymous";
+}
+
 // ── Submit ────────────────────────────────────────────────────────────────────
 
 async function handleSubmit() {
-  const language = document.getElementById("language").value;
-  const code     = document.getElementById("code").value.trim();
+  const language  = document.getElementById("language").value;
+  const code      = document.getElementById("code").value.trim();
+  const studentId = getStudentId();
 
   dismissError();
 
@@ -103,24 +144,23 @@ async function handleSubmit() {
   setSubmitLoading(true);
   resetStatus();
 
-  let data;
   try {
     const res = await fetch(`${API_BASE_URL}/scan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, language }),
+      body: JSON.stringify({ code, language, student_id: studentId }),
     });
 
-    data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => ({}));
 
     if (res.status === 202) {
       startPolling(data.scan_id);
       return;
     }
 
-    if (res.status === 400) showError(data.error || "Invalid request.");
+    if (res.status === 400)      showError(data.error || "Invalid request.");
     else if (res.status === 429) showError("Too many requests — please wait.");
-    else showError("Server error. Please try again.");
+    else                         showError("Server error. Please try again.");
 
   } catch (_) {
     showError("Could not reach server. Check your connection.");
@@ -143,7 +183,7 @@ function startPolling(scanId) {
 async function poll(scanId) {
   if (Date.now() > _pollDeadline) {
     showFailed(scanId);
-    showError(`Scan timed out. Check back later with Scan ID: ${scanId}`);
+    showError(`Scan timed out. Scan ID: ${scanId}`);
     setSubmitLoading(false);
     return;
   }
@@ -167,17 +207,16 @@ async function poll(scanId) {
 
   if (data.status === "FAILED") {
     showFailed(scanId);
-    showError(`Scan failed. Code could not be processed. (Scan ID: ${scanId})`);
+    showError(`Scan failed. (Scan ID: ${scanId})`);
     setSubmitLoading(false);
     return;
   }
 
-  // Respect server-provided expiry
   if (data.scan_expires_at) {
     const serverDeadline = new Date(data.scan_expires_at).getTime();
     if (Date.now() >= serverDeadline) {
       showFailed(scanId);
-      showError(`Scan expired on the server. (Scan ID: ${scanId})`);
+      showError(`Scan expired. (Scan ID: ${scanId})`);
       setSubmitLoading(false);
       return;
     }
@@ -203,7 +242,7 @@ async function handleDone(statusData) {
   try {
     const reportRes = await fetch(_reportUrl);
     if (reportRes.status === 403) {
-      showError('Download link expired. <button class="btn-link" onclick="refreshReportLink()">Click to refresh.</button>');
+      showError('Download link expired. <button class="btn-link" onclick="refreshReportLink()">Refresh.</button>');
       setSubmitLoading(false);
       return;
     }
@@ -236,6 +275,74 @@ async function refreshReportLink() {
   }
 }
 
+// ── History ───────────────────────────────────────────────────────────────────
+
+async function loadHistory() {
+  const studentId = getStudentId();
+  const container = document.getElementById("history-content");
+
+  if (studentId === "anonymous") {
+    container.innerHTML = '<div class="history-empty">Enter your Student ID in the sidebar to load history.</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="history-empty">Loading history…</div>';
+
+  try {
+    const res  = await fetch(
+      `${API_BASE_URL}/history?student_id=${encodeURIComponent(studentId)}`
+    );
+    const data = await res.json().catch(() => ({}));
+    const scans = data.scans || [];
+
+    if (scans.length === 0) {
+      container.innerHTML = `<div class="history-empty">No scans yet for "${studentId}".</div>`;
+      return;
+    }
+
+    container.innerHTML = `<ul class="history-list">
+      ${scans.map(s => `
+        <li class="history-item" onclick="loadHistoryScan('${s.scan_id}')">
+          <span class="history-scan-id">${s.scan_id}</span>
+          <span class="history-lang">${s.language || "—"}</span>
+          <span class="history-date">${formatDate(s.created_at)}</span>
+          <span class="history-status ${s.status}">${s.status}</span>
+        </li>
+      `).join("")}
+    </ul>`;
+  } catch (_) {
+    container.innerHTML = '<div class="history-empty">Could not load history. Check your connection.</div>';
+  }
+}
+
+async function loadHistoryScan(scanId) {
+  try {
+    const res  = await fetch(`${API_BASE_URL}/status?scan_id=${encodeURIComponent(scanId)}`);
+    const data = await res.json().catch(() => ({}));
+
+    if (data.status === "DONE" && data.report_url) {
+      const reportRes = await fetch(data.report_url);
+      const report    = await reportRes.json();
+      _currentScanId  = scanId;
+      renderReport(report);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      showError(`Scan ${scanId} is ${data.status} — no report available yet.`);
+    }
+  } catch (_) {
+    showError("Could not load scan. Check your connection.");
+  }
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString();
+  } catch (_) {
+    return iso;
+  }
+}
+
 // ── Render report ─────────────────────────────────────────────────────────────
 
 function renderReport(report) {
@@ -261,46 +368,33 @@ function renderReport(report) {
 function setSubmitLoading(loading) {
   const btn = document.getElementById("submit-btn");
   const lbl = document.getElementById("btn-label");
-  btn.disabled = loading;
+  btn.disabled    = loading;
   lbl.textContent = loading ? "Scanning…" : "Scan Code";
 }
 
 function resetStatus() {
-  ["status-idle","status-running","status-done","status-failed"].forEach(id => {
-    document.getElementById(id)?.classList.add("hidden");
-  });
   document.getElementById("status-idle").classList.remove("hidden");
-  document.getElementById("status-badge")?.classList.add("hidden");
+  document.getElementById("status-running").classList.add("hidden");
+  document.getElementById("status-done").classList.add("hidden");
+  document.getElementById("status-failed").classList.add("hidden");
 }
 
 function showRunning(scanId) {
   document.getElementById("status-idle").classList.add("hidden");
   document.getElementById("status-running").classList.remove("hidden");
   document.getElementById("status-scan-id").textContent = scanId;
-  const badge = document.getElementById("status-badge");
-  badge.textContent = "SCANNING";
-  badge.classList.remove("hidden");
 }
 
 function showDone() {
   document.getElementById("status-running").classList.add("hidden");
   document.getElementById("status-done").classList.remove("hidden");
-  const badge = document.getElementById("status-badge");
-  badge.textContent = "DONE";
-  badge.style.background = "rgba(0,229,160,.15)";
-  badge.style.color = "var(--green)";
 }
 
 function showFailed(scanId) {
   document.getElementById("status-running").classList.add("hidden");
   document.getElementById("status-failed").classList.remove("hidden");
   const el = document.getElementById("fail-scan-id");
-  if (el) el.textContent = `Scan ID: ${scanId}`;
-  const badge = document.getElementById("status-badge");
-  badge.textContent = "FAILED";
-  badge.style.background = "rgba(255,77,106,.15)";
-  badge.style.color = "#ff4d6a";
-  badge.classList.remove("hidden");
+  if (el) el.textContent = scanId;
 }
 
 function showError(html) {

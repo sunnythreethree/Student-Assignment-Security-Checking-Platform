@@ -3,31 +3,58 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Student Assignment Security Checker</title>
+  <title>SAST — Code Security Scanner</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <!-- ── Sidebar ── -->
   <aside class="sidebar">
+
+    <!-- Logo -->
     <div class="sidebar-logo">
-      <span class="logo-icon">⬡</span>
+      <svg class="logo-shield" width="34" height="38" viewBox="0 0 34 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M17 1.5L2.5 7.5v11C2.5 28.25 9.1 36.4 17 38.5 24.9 36.4 31.5 28.25 31.5 18.5v-11L17 1.5z"
+              fill="url(#shield-fill)" stroke="url(#shield-stroke)" stroke-width="1.2"/>
+        <path d="M11 19.5l4.5 4.5L23 15" stroke="#fff" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="shield-fill" x1="17" y1="1.5" x2="17" y2="38.5" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#059669"/>
+            <stop offset="1" stop-color="#047857"/>
+          </linearGradient>
+          <linearGradient id="shield-stroke" x1="17" y1="1.5" x2="17" y2="38.5" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#34d399"/>
+            <stop offset="1" stop-color="#059669"/>
+          </linearGradient>
+        </defs>
+      </svg>
       <div>
         <div class="logo-title">SAST</div>
-        <div class="logo-sub">Security Scanner</div>
+        <div class="logo-sub">Code Security Scanner</div>
       </div>
     </div>
 
+    <!-- Nav -->
     <nav class="sidebar-nav">
       <a class="nav-item active" data-view="scanner" onclick="switchView('scanner')">
-        <span class="nav-icon">◈</span> Scanner
+        <span class="nav-icon">⌨</span> Scanner
       </a>
       <a class="nav-item" data-view="results" onclick="switchView('results')">
-        <span class="nav-icon">◉</span> Results
+        <span class="nav-icon">📋</span> Results &amp; History
       </a>
     </nav>
 
+    <!-- Student ID -->
+    <div class="sidebar-student">
+      <div class="student-id-label">Student ID</div>
+      <input type="text" id="student-id" class="student-id-input"
+             placeholder="e.g. zhang.jings" autocomplete="off" />
+      <div class="student-id-hint" id="student-id-hint">Auto-saved · history persists across sessions</div>
+    </div>
+
+    <!-- Footer -->
     <div class="sidebar-footer">
-      <div class="sidebar-version">v1.0 · open access</div>
+      <div class="sidebar-version">CS6620 Group 9 · v1.0</div>
     </div>
   </aside>
 
@@ -49,7 +76,7 @@
     <section class="view active" id="view-scanner">
       <div class="scanner-layout">
 
-        <!-- Left: input panel -->
+        <!-- Code input panel (full width) -->
         <div class="panel input-panel">
           <div class="panel-header">
             <span class="panel-dot red"></span>
@@ -61,7 +88,7 @@
           <div class="form-row">
             <label>Language</label>
             <select id="language" class="select">
-              <option value="">— select —</option>
+              <option value="">— select language —</option>
               <option value="python">Python</option>
               <option value="java">Java</option>
               <option value="javascript">JavaScript</option>
@@ -74,48 +101,35 @@
           </div>
 
           <div id="drop-zone" class="drop-zone">
-            <div class="drop-hint">Drop a file here, or paste code below</div>
-            <textarea id="code" class="code-input" placeholder="Paste your code here..." spellcheck="false"></textarea>
+            <div class="drop-hint">⬇ Drop a file here, or paste code below</div>
+            <textarea id="code" class="code-input"
+                      placeholder="Paste your code here..." spellcheck="false"></textarea>
+          </div>
+
+          <!-- Inline status bar -->
+          <div class="status-bar">
+            <div id="status-idle" class="status-idle-msg">Ready to scan</div>
+
+            <div id="status-running" class="status-running hidden">
+              <div class="spinner-sm"></div>
+              <span>Scanning…</span>
+              <span class="scan-id-inline" id="status-scan-id">—</span>
+            </div>
+
+            <div id="status-done" class="status-done-msg hidden">
+              <span class="status-ok">✓ Scan complete</span>
+              <button class="btn-view-results" onclick="switchView('results')">View Results →</button>
+            </div>
+
+            <div id="status-failed" class="hidden">
+              <span class="status-err">✗ Scan failed</span>
+              <span id="fail-scan-id" class="scan-id-inline" style="margin-left:8px"></span>
+            </div>
           </div>
 
           <button id="submit-btn" class="btn-scan" onclick="handleSubmit()">
             <span id="btn-label">Scan Code</span>
           </button>
-        </div>
-
-        <!-- Right: status panel -->
-        <div class="panel status-panel">
-          <div class="panel-header">
-            <span class="panel-dot green"></span>
-            <span class="panel-label">Status</span>
-            <span id="status-badge" class="status-badge hidden">PENDING</span>
-          </div>
-
-          <div class="status-idle" id="status-idle">
-            <div class="idle-icon">◌</div>
-            <div class="idle-text">Awaiting scan submission</div>
-          </div>
-
-          <div class="status-running hidden" id="status-running">
-            <div class="spinner-ring"></div>
-            <div class="running-label">Scanning…</div>
-            <div class="scan-id-row">
-              Scan ID: <code id="status-scan-id">—</code>
-            </div>
-          </div>
-
-          <div class="status-done hidden" id="status-done">
-            <div class="done-icon">✓</div>
-            <div class="done-label">Scan complete</div>
-            <button class="btn-view-results" onclick="switchView('results')">View Results →</button>
-          </div>
-
-          <div class="status-failed hidden" id="status-failed">
-            <div class="fail-icon">✗</div>
-            <div class="fail-label">Scan failed</div>
-            <div id="fail-scan-id" class="scan-id-row"></div>
-          </div>
-
         </div>
 
       </div>
@@ -127,19 +141,19 @@
       <!-- KPI row -->
       <div class="kpi-row">
         <div class="kpi-card kpi-high">
-          <div class="kpi-label">HIGH</div>
+          <div class="kpi-label">High</div>
           <div class="kpi-value" id="kpi-high">—</div>
         </div>
         <div class="kpi-card kpi-medium">
-          <div class="kpi-label">MEDIUM</div>
+          <div class="kpi-label">Medium</div>
           <div class="kpi-value" id="kpi-medium">—</div>
         </div>
         <div class="kpi-card kpi-low">
-          <div class="kpi-label">LOW</div>
+          <div class="kpi-label">Low</div>
           <div class="kpi-value" id="kpi-low">—</div>
         </div>
         <div class="kpi-card kpi-total">
-          <div class="kpi-label">TOTAL</div>
+          <div class="kpi-label">Total</div>
           <div class="kpi-value" id="kpi-total">—</div>
         </div>
       </div>
@@ -154,6 +168,17 @@
           <span class="panel-label">Findings</span>
         </div>
         <div id="results"></div>
+      </div>
+
+      <!-- History panel -->
+      <div class="panel history-panel" id="history-panel">
+        <div class="panel-header">
+          <span class="panel-dot yellow"></span>
+          <span class="panel-label">Scan History</span>
+        </div>
+        <div id="history-content">
+          <div class="history-empty">Enter your Student ID in the sidebar to load history.</div>
+        </div>
       </div>
 
     </section>
