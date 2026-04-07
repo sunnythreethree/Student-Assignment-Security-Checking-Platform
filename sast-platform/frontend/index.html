@@ -27,9 +27,7 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="sidebar-key-label">API Key</div>
-      <input type="text" id="api-key" class="sidebar-key-input" placeholder="x-student-key…" autocomplete="off" />
-      <div id="key-status" class="key-status"></div>
+      <div class="sidebar-version">v1.0 · open access</div>
     </div>
   </aside>
 
@@ -75,7 +73,10 @@
             </select>
           </div>
 
-          <textarea id="code" class="code-input" placeholder="Paste your code here..." spellcheck="false"></textarea>
+          <div id="drop-zone" class="drop-zone">
+            <div class="drop-hint">Drop a file here, or paste code below</div>
+            <textarea id="code" class="code-input" placeholder="Paste your code here..." spellcheck="false"></textarea>
+          </div>
 
           <button id="submit-btn" class="btn-scan" onclick="handleSubmit()">
             <span id="btn-label">Scan Code</span>

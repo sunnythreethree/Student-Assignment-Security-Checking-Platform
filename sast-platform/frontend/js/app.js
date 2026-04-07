@@ -13,7 +13,19 @@ const POLL_BACKOFF     = 1.5;
 const POLL_MAX_MS      = 30000;
 const POLL_TIMEOUT_MS  = 5 * 60 * 1000;
 
-const LS_API_KEY = "sasc_api_key";
+// Map file extension → language selector value
+const EXT_TO_LANGUAGE = {
+  py:   "python",
+  java: "java",
+  js:   "javascript",
+  ts:   "typescript",
+  go:   "go",
+  rb:   "ruby",
+  c:    "c",
+  cpp:  "cpp",
+  cc:   "cpp",
+  cxx:  "cpp",
+};
 
 let _currentScanId   = null;
 let _pollTimer       = null;
@@ -37,23 +49,54 @@ function switchView(name) {
   if (title) title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Drag-and-drop ─────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
-  const stored = localStorage.getItem(LS_API_KEY);
-  if (stored) document.getElementById("api-key").value = stored;
+  const dropZone = document.getElementById("drop-zone");
+  const codeArea = document.getElementById("code");
+
+  ["dragenter", "dragover"].forEach(evt =>
+    dropZone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropZone.classList.add("drag-over");
+    })
+  );
+
+  ["dragleave", "drop"].forEach(evt =>
+    dropZone.addEventListener(evt, () => dropZone.classList.remove("drag-over"))
+  );
+
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+
+    const ext = file.name.split(".").pop().toLowerCase();
+    const lang = EXT_TO_LANGUAGE[ext];
+    if (lang) {
+      document.getElementById("language").value = lang;
+    } else {
+      showError(`Unsupported file type ".${ext}". Supported: ${Object.keys(EXT_TO_LANGUAGE).map(e => "."+e).join(", ")}`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      codeArea.value = ev.target.result;
+      dismissError();
+    };
+    reader.readAsText(file);
+  });
 });
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 
 async function handleSubmit() {
-  const apiKey   = document.getElementById("api-key").value.trim();
   const language = document.getElementById("language").value;
   const code     = document.getElementById("code").value.trim();
 
   dismissError();
 
-  if (!apiKey)   { showError("Please enter your API key in the sidebar."); return; }
   if (!language) { showError("Please select a language."); return; }
   if (!code)     { showError("Please paste some code to scan."); return; }
 
@@ -64,22 +107,20 @@ async function handleSubmit() {
   try {
     const res = await fetch(`${API_BASE_URL}/scan`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-student-key": apiKey },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, language }),
     });
 
     data = await res.json().catch(() => ({}));
 
     if (res.status === 202) {
-      localStorage.setItem(LS_API_KEY, apiKey);
-      startPolling(data.scan_id, apiKey);
+      startPolling(data.scan_id);
       return;
     }
 
-    if (res.status === 400)      showError(data.error || "Invalid request.");
-    else if (res.status === 401) handleUnauthorized();
+    if (res.status === 400) showError(data.error || "Invalid request.");
     else if (res.status === 429) showError("Too many requests — please wait.");
-    else                         showError("Server error. Please try again.");
+    else showError("Server error. Please try again.");
 
   } catch (_) {
     showError("Could not reach server. Check your connection.");
@@ -90,16 +131,16 @@ async function handleSubmit() {
 
 // ── Polling ───────────────────────────────────────────────────────────────────
 
-function startPolling(scanId, apiKey) {
+function startPolling(scanId) {
   _currentScanId   = scanId;
   _currentInterval = POLL_INITIAL_MS;
   _pollDeadline    = Date.now() + POLL_TIMEOUT_MS;
 
   showRunning(scanId);
-  _pollTimer = setTimeout(() => poll(scanId, apiKey), _currentInterval);
+  _pollTimer = setTimeout(() => poll(scanId), _currentInterval);
 }
 
-async function poll(scanId, apiKey) {
+async function poll(scanId) {
   if (Date.now() > _pollDeadline) {
     showFailed(scanId);
     showError(`Scan timed out. Check back later with Scan ID: ${scanId}`);
@@ -110,11 +151,9 @@ async function poll(scanId, apiKey) {
   let data;
   try {
     const res = await fetch(
-      `${API_BASE_URL}/status?scan_id=${encodeURIComponent(scanId)}`,
-      { headers: { "x-student-key": apiKey } }
+      `${API_BASE_URL}/status?scan_id=${encodeURIComponent(scanId)}`
     );
     data = await res.json().catch(() => ({}));
-    if (res.status === 401) { handleUnauthorized(); return; }
   } catch (_) {
     showError("Could not reach server. Check your connection.");
     setSubmitLoading(false);
@@ -122,7 +161,7 @@ async function poll(scanId, apiKey) {
   }
 
   if (data.status === "DONE") {
-    await handleDone(data, apiKey);
+    await handleDone(data);
     return;
   }
 
@@ -133,7 +172,7 @@ async function poll(scanId, apiKey) {
     return;
   }
 
-  // Respect server-provided expiry — stop early if backend marks job expired
+  // Respect server-provided expiry
   if (data.scan_expires_at) {
     const serverDeadline = new Date(data.scan_expires_at).getTime();
     if (Date.now() >= serverDeadline) {
@@ -142,21 +181,17 @@ async function poll(scanId, apiKey) {
       setSubmitLoading(false);
       return;
     }
-    // Also tighten the local deadline if server expiry is sooner
-    if (serverDeadline < _pollDeadline) {
-      _pollDeadline = serverDeadline;
-    }
+    if (serverDeadline < _pollDeadline) _pollDeadline = serverDeadline;
   }
 
-  // Use server's suggested interval for the first hint, then apply local backoff
   const hintMs = data.retry_after_seconds
     ? data.retry_after_seconds * 1000
     : _currentInterval;
   _currentInterval = Math.min(_currentInterval * POLL_BACKOFF, POLL_MAX_MS);
-  _pollTimer = setTimeout(() => poll(scanId, apiKey), Math.min(hintMs, POLL_MAX_MS));
+  _pollTimer = setTimeout(() => poll(scanId), Math.min(hintMs, POLL_MAX_MS));
 }
 
-async function handleDone(statusData, apiKey) {
+async function handleDone(statusData) {
   _reportUrl = statusData.report_url;
 
   if (!_reportUrl) {
@@ -184,12 +219,10 @@ async function handleDone(statusData, apiKey) {
 
 async function refreshReportLink() {
   if (!_currentScanId) return;
-  const apiKey = localStorage.getItem(LS_API_KEY) || "";
   dismissError();
   try {
     const res  = await fetch(
-      `${API_BASE_URL}/status?scan_id=${encodeURIComponent(_currentScanId)}`,
-      { headers: { "x-student-key": apiKey } }
+      `${API_BASE_URL}/status?scan_id=${encodeURIComponent(_currentScanId)}`
     );
     const data = await res.json().catch(() => ({}));
     if (data.report_url) {
@@ -203,7 +236,7 @@ async function refreshReportLink() {
   }
 }
 
-// ── Render report + KPI cards ─────────────────────────────────────────────────
+// ── Render report ─────────────────────────────────────────────────────────────
 
 function renderReport(report) {
   const summary = report?.summary || {};
@@ -221,15 +254,6 @@ function renderReport(report) {
   }
 
   window.renderScanResults(report, "results");
-}
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
-
-function handleUnauthorized() {
-  localStorage.removeItem(LS_API_KEY);
-  document.getElementById("api-key").value = "";
-  showError("Invalid API key. Please re-enter your key.");
-  setSubmitLoading(false);
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -291,16 +315,9 @@ function dismissError() {
 
 // ── Public API for results.js ─────────────────────────────────────────────────
 
-/**
- * Fetch the current status for a scan once and return the parsed JSON.
- * Used by the "Refresh link" button in results.js to get a fresh presigned URL
- * without re-running the full polling loop.
- */
 window.pollStatus = async function pollStatus(scanId) {
-  const apiKey = localStorage.getItem(LS_API_KEY) || "";
   const res = await fetch(
-    `${API_BASE_URL}/status?scan_id=${encodeURIComponent(scanId)}`,
-    { headers: { "x-student-key": apiKey } }
+    `${API_BASE_URL}/status?scan_id=${encodeURIComponent(scanId)}`
   );
   if (!res.ok) throw new Error(`Status request failed (${res.status})`);
   return res.json();
