@@ -1,5 +1,5 @@
 # Multi-stage build for security scanning tools
-# Stage 1: Build Semgrep
+# Stage 1: Build Semgrep + download rules at build time (no internet needed at runtime)
 FROM python:3.12-slim as semgrep-builder
 
 # Install system dependencies for building
@@ -11,6 +11,12 @@ RUN apt-get update && apt-get install -y \
 
 # Install Semgrep
 RUN pip install --no-cache-dir semgrep>=1.45.0
+
+# Download OWASP Top 10 rules during image build so the container
+# does not need outbound internet access at scan time.
+RUN mkdir -p /semgrep-rules && \
+    semgrep --config=p/owasp-top-ten --dump-config 2>/dev/null > /semgrep-rules/rules.yaml || \
+    curl -sSL "https://semgrep.dev/c/p/owasp-top-ten" -o /semgrep-rules/rules.yaml
 
 # Stage 2: Build Bandit
 FROM python:3.12-slim as bandit-builder
@@ -40,6 +46,8 @@ RUN apt-get update && apt-get install -y \
 # Copy tools from builder stages
 COPY --from=semgrep-builder /usr/local/bin/semgrep /usr/local/bin/semgrep
 COPY --from=semgrep-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+# Copy pre-downloaded Semgrep rules (no internet needed at scan time)
+COPY --from=semgrep-builder /semgrep-rules /semgrep-rules
 COPY --from=bandit-builder /usr/local/bin/bandit /usr/local/bin/bandit
 COPY --from=bandit-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
