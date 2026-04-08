@@ -15,15 +15,21 @@ logger = logging.getLogger(__name__)
 # container does not need outbound internet access at scan time.  Fall back to
 # the published p/owasp-top-ten ruleset if the local file is absent (e.g. local
 # development outside Docker).  Override with the SEMGREP_CONFIG env var.
-_LOCAL_RULES = "/semgrep-rules/rules.yaml"
-_SEMGREP_CONFIG = os.environ.get("SEMGREP_CONFIG") or (
-    _LOCAL_RULES if os.path.exists(_LOCAL_RULES) else "p/owasp-top-ten"
-)
-if _SEMGREP_CONFIG != _LOCAL_RULES:
-    logger.warning(
-        "Local semgrep rules not found at %s; falling back to %s (requires internet)",
-        _LOCAL_RULES, _SEMGREP_CONFIG,
-    )
+_LOCAL_RULES_DIR = "/semgrep-rules"
+_LOCAL_RULES_FILE = "/semgrep-rules/rules.yaml"
+# Prefer the rules directory (javascript + owasp + secrets).
+# Fall back to a single rules.yaml, then to the online registry.
+if os.environ.get("SEMGREP_CONFIG"):
+    _SEMGREP_CONFIG = os.environ["SEMGREP_CONFIG"]
+elif os.path.isdir(_LOCAL_RULES_DIR) and any(
+    f.endswith(".yaml") for f in os.listdir(_LOCAL_RULES_DIR)
+):
+    _SEMGREP_CONFIG = _LOCAL_RULES_DIR
+elif os.path.exists(_LOCAL_RULES_FILE):
+    _SEMGREP_CONFIG = _LOCAL_RULES_FILE
+else:
+    _SEMGREP_CONFIG = "p/owasp-top-ten"
+    logger.warning("Local semgrep rules not found; falling back to %s (requires internet)", _SEMGREP_CONFIG)
 
 
 class SecurityScanner:

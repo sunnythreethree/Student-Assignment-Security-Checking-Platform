@@ -12,11 +12,14 @@ RUN apt-get update && apt-get install -y \
 # Install Semgrep
 RUN pip install --no-cache-dir semgrep>=1.45.0
 
-# Download OWASP Top 10 rules during image build so the container
+# Download comprehensive rules during image build so the container
 # does not need outbound internet access at scan time.
+# Stores each ruleset as a separate file; scanner uses the directory.
 RUN mkdir -p /semgrep-rules && \
-    semgrep --config=p/owasp-top-ten --dump-config 2>/dev/null > /semgrep-rules/rules.yaml || \
-    curl -sSL "https://semgrep.dev/c/p/owasp-top-ten" -o /semgrep-rules/rules.yaml
+    curl -sSf "https://semgrep.dev/c/p/javascript"    -o /semgrep-rules/javascript.yaml && \
+    curl -sSf "https://semgrep.dev/c/p/owasp-top-ten" -o /semgrep-rules/owasp.yaml && \
+    curl -sSf "https://semgrep.dev/c/p/secrets"       -o /semgrep-rules/secrets.yaml && \
+    echo "Rules downloaded:" && ls -lh /semgrep-rules/
 
 # Stage 2: Build Bandit
 FROM python:3.12-slim as bandit-builder
