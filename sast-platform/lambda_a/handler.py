@@ -33,6 +33,8 @@ SQS_QUEUE_URL  = os.environ["SQS_QUEUE_URL"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
 S3_BUCKET      = os.environ["S3_BUCKET"]
 
+ANONYMOUS_ID = "anonymous"
+
 
 # ---------------------------------------------------------------------------
 # Main handler
