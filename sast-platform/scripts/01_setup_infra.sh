@@ -168,7 +168,7 @@ deploy_stack "$STACK_LAMBDA_A" "$INFRA_DIR/lambda_a.yaml" \
   "S3ReportBucket=$REPORT_BUCKET" \
   "SQSStackName=$STACK_SQS"
 
-LAMBDA_A_URL="$(get_output "$STACK_LAMBDA_A" LambdaAFunctionUrl 2>/dev/null || true)"
+LAMBDA_A_URL="$(get_output "$STACK_LAMBDA_A" LambdaAApiUrl 2>/dev/null || true)"
 
 # ── 5. Lambda B ────────────────────────────────────────────────────────────────
 deploy_stack "$STACK_LAMBDA_B" "$INFRA_DIR/lambda_b.yaml" \
@@ -229,7 +229,7 @@ echo "║               Deployment Complete                    ║"
 echo "╠══════════════════════════════════════════════════════╣"
 
 # Re-query Lambda A URL (may have been set after deploy)
-LAMBDA_A_URL="$(get_output "$STACK_LAMBDA_A" LambdaAFunctionUrl 2>/dev/null || true)"
+LAMBDA_A_URL="$(get_output "$STACK_LAMBDA_A" LambdaAApiUrl 2>/dev/null || true)"
 SQS_URL="$(get_output "$STACK_SQS" ScanQueueUrl)"
 DLQ_URL="$(get_output "$STACK_SQS" DeadLetterQueueUrl)"
 
