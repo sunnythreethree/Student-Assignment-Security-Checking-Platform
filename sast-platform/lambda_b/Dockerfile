@@ -45,6 +45,8 @@ RUN apt-get update && apt-get install -y \
 
 # Copy tools from builder stages
 COPY --from=semgrep-builder /usr/local/bin/semgrep /usr/local/bin/semgrep
+# pysemgrep is required by semgrep 1.45+ (semgrep calls pysemgrep internally)
+COPY --from=semgrep-builder /usr/local/bin/pysemgrep /usr/local/bin/pysemgrep
 COPY --from=semgrep-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 # Copy pre-downloaded Semgrep rules (no internet needed at scan time)
 COPY --from=semgrep-builder /semgrep-rules /semgrep-rules
