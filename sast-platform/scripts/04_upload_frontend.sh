@@ -111,7 +111,7 @@ get_lambda_url_from_cf() {
   url=$(aws cloudformation describe-stacks \
     --stack-name "$LAMBDA_A_STACK" \
     --region "$AWS_REGION" \
-    --query "Stacks[0].Outputs[?OutputKey=='LambdaAFunctionUrl'].OutputValue" \
+    --query "Stacks[0].Outputs[?OutputKey=='LambdaAApiUrl'].OutputValue" \
     --output text 2>/dev/null || true)
 
   if [[ -z "$url" || "$url" == "None" ]]; then
