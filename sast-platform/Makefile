@@ -7,12 +7,9 @@ help:
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "  deploy         Full-stack deploy (requires CODE_BUCKET)"
-	@echo "                 make deploy CODE_BUCKET=my-bucket"
-	@echo "                 make deploy CODE_BUCKET=my-bucket ENV=prod REGION=us-west-2"
-	@echo "                 make deploy CODE_BUCKET=my-bucket VPC_ID=vpc-xxx SUBNETS=subnet-aaa"
-	@echo "                 make deploy CODE_BUCKET=my-bucket SCANNER_IMAGE=<ecr-uri>"
-	@echo "                 make deploy CODE_BUCKET=my-bucket STUDENT_KEY=abc  (+ smoke test)"
-	@echo "                 make deploy CODE_BUCKET=my-bucket SKIP_ECS=1 SKIP_TEST=1"
+	@echo "                 make deploy CODE_BUCKET=my-bucket [ENV=dev] [REGION=us-east-1]"
+	@echo "                 make deploy CODE_BUCKET=my-bucket VPC_ID=vpc-xxx SUBNETS=subnet-xxx"
+	@echo "                 make deploy CODE_BUCKET=my-bucket STUDENT_KEY=abc123  (+ smoke test)"
 	@echo "  install        Install test deps for both Lambda A and B"
 	@echo "  install-a      Install Lambda A deps only"
 	@echo "  install-b      Install Lambda B deps only"
@@ -30,10 +27,9 @@ deploy:
 	  $(if $(REGION),--region "$(REGION)") \
 	  $(if $(VPC_ID),--vpc-id "$(VPC_ID)") \
 	  $(if $(SUBNETS),--subnets "$(SUBNETS)") \
-	  $(if $(SCANNER_IMAGE),--scanner-image "$(SCANNER_IMAGE)") \
 	  $(if $(STUDENT_KEY),--student-key "$(STUDENT_KEY)") \
-	  $(if $(SKIP_TEST),--skip-test) \
-	  $(if $(SKIP_ECS),--skip-ecs)
+	  $(if $(filter true,$(SKIP_TEST)),--skip-test) \
+	  $(if $(filter true,$(SKIP_ECS)),--skip-ecs)
 
 install: install-a install-b
 
