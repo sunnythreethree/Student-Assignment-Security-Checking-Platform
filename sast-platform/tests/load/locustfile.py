@@ -1,135 +1,123 @@
 """
-locustfile.py — Load test for SAST Platform
-CS6620 Group 9
+Load test for the SAST Platform API (Lambda A Function URL).
 
-Simulates an entire class submitting assignments simultaneously.
-Verifies that SQS buffers requests correctly and Lambda A stays responsive
-under concurrent load.
+Usage:
+    pip install locust
+    locust -f locustfile.py --host https://owptzx2rc5j5qtlevonifzrv6a0fwynz.lambda-url.us-east-1.on.aws
 
-Run with:
-    locust -f tests/load/locustfile.py --host=https://<LAMBDA_URL> \
-           --users=30 --spawn-rate=5 --run-time=2m --headless
+Then open http://localhost:8089 and set:
+    - Number of users: 50
+    - Spawn rate:      10
+    - Run time:        60s
 
-Environment variables:
-    STUDENT_KEY   — A valid X-Student-Key for load testing (required)
-    LOCUST_HOST   — Override for --host flag
+Or headless (CI / quick verification):
+    locust -f locustfile.py \
+        --host https://owptzx2rc5j5qtlevonifzrv6a0fwynz.lambda-url.us-east-1.on.aws \
+        --headless -u 50 -r 10 -t 60s \
+        --csv results/load_test
 """
 
-import os
-import json
 import random
+import string
+import uuid
+from locust import HttpUser, task, between
 
-from locust import HttpUser, task, between, events
 
-STUDENT_KEY = os.environ.get("STUDENT_KEY", "load-test-key")
+# ---------------------------------------------------------------------------
+# Sample code payloads — one per supported language
+# ---------------------------------------------------------------------------
 
-# Sample code snippets to vary the payload (prevents identical message dedup in SQS)
 PYTHON_SNIPPETS = [
-    "def hello():\n    return 'hello world'\n",
-    "x = [i for i in range(100)]\nprint(x)\n",
-    "import math\nresult = math.sqrt(16)\nprint(result)\n",
-    "data = {'key': 'value'}\nprint(data.get('key'))\n",
-    "class Counter:\n    def __init__(self):\n        self.count = 0\n    def increment(self):\n        self.count += 1\n",
+    "import os\nresult = eval(input())\nprint(result)",
+    "import subprocess\nsubprocess.run(['ls', '-la'])",
+    "password = 'hardcoded_secret_123'\nprint(password)",
+    "import pickle\ndata = pickle.loads(user_input)",
+    "exec(open('script.py').read())",
 ]
 
-VULNERABLE_SNIPPETS = [
-    # Bandit B602 — shell injection
-    "import subprocess\nsubprocess.call('ls', shell=True)\n",
-    # Bandit B105 — hardcoded password
-    "password = 'hunter2'\nprint(password)\n",
+JAVA_SNIPPETS = [
+    "public class Main {\n    public static void main(String[] args) {\n        Runtime.getRuntime().exec(args[0]);\n    }\n}",
+    "import java.sql.*;\nString query = \"SELECT * FROM users WHERE id = \" + userId;",
 ]
 
+JAVASCRIPT_SNIPPETS = [
+    "const result = eval(userInput);",
+    "const exec = require('child_process').exec;\nexec(process.argv[1]);",
+    "document.innerHTML = userInput;",
+]
 
-class StudentUser(HttpUser):
+LANGUAGE_POOL = (
+    [("python", s) for s in PYTHON_SNIPPETS] +
+    [("java", s) for s in JAVA_SNIPPETS] +
+    [("javascript", s) for s in JAVASCRIPT_SNIPPETS]
+)
+
+
+def _random_student_id() -> str:
+    """Generate a random student ID for each virtual user."""
+    suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    return f"load-test-{suffix}"
+
+
+# ---------------------------------------------------------------------------
+# Locust user
+# ---------------------------------------------------------------------------
+
+class ScanUser(HttpUser):
     """
-    Simulates a student submitting a code scan and polling for results.
-    Think time of 1-3 seconds between tasks models realistic browser behavior.
+    Simulates a student submitting code for scanning and polling for results.
+
+    wait_time: pause between tasks to simulate realistic user behaviour.
     """
     wait_time = between(1, 3)
 
     def on_start(self):
-        self.headers = {
-            "X-Student-Key": STUDENT_KEY,
-            "Content-Type": "application/json",
-        }
+        """Called once when a simulated user starts."""
+        self.student_id = _random_student_id()
 
-    @task(4)
-    def submit_clean_scan(self):
-        """Most students submit normal code (weight 4)."""
-        code = random.choice(PYTHON_SNIPPETS)
+    # ------------------------------------------------------------------
+    # Tasks
+    # ------------------------------------------------------------------
+
+    @task(3)
+    def submit_scan(self):
+        """POST /scan — submit a code snippet for analysis."""
+        language, code = random.choice(LANGUAGE_POOL)
+        payload = {
+            "code": code,
+            "language": language,
+            "student_id": self.student_id,
+        }
         with self.client.post(
-            "/",
-            headers=self.headers,
-            json={"code": code, "language": "python"},
-            name="POST /scan (clean)",
+            "/scan",
+            json=payload,
+            name="POST /scan",
             catch_response=True,
         ) as resp:
             if resp.status_code == 202:
+                # Store scan_id so the poll task can use it
+                data = resp.json()
+                self._last_scan_id = data.get("scan_id")
                 resp.success()
             elif resp.status_code == 429:
-                resp.failure("Rate limited")
-            else:
-                resp.failure(f"Unexpected {resp.status_code}: {resp.text[:100]}")
-
-    @task(1)
-    def submit_vulnerable_scan(self):
-        """Some students submit vulnerable code (weight 1)."""
-        code = random.choice(VULNERABLE_SNIPPETS)
-        with self.client.post(
-            "/",
-            headers=self.headers,
-            json={"code": code, "language": "python"},
-            name="POST /scan (vulnerable)",
-            catch_response=True,
-        ) as resp:
-            if resp.status_code == 202:
+                # Lambda throttled — expected under high load, not a failure
                 resp.success()
             else:
-                resp.failure(f"Unexpected {resp.status_code}")
+                resp.failure(f"Unexpected status {resp.status_code}: {resp.text[:200]}")
 
-    @task(2)
+    @task(1)
     def poll_status(self):
-        """Students poll for status after submitting (weight 2)."""
-        # Use a plausible-looking scan_id — will return 404, which is expected
-        fake_id = f"scan-{''.join(random.choices('0123456789abcdef', k=8))}"
+        """GET /status — poll for scan result."""
+        scan_id = getattr(self, "_last_scan_id", None)
+        if not scan_id:
+            return  # No scan submitted yet by this user
+
         with self.client.get(
-            "/",
-            headers=self.headers,
-            params={"scan_id": fake_id},
+            f"/status?scan_id={scan_id}&student_id={self.student_id}",
             name="GET /status",
             catch_response=True,
         ) as resp:
-            # 404 is expected for a random scan_id — still measures latency
-            if resp.status_code in (200, 404):
-                resp.success()
-            elif resp.status_code == 401:
-                resp.failure("Auth failed — check STUDENT_KEY env var")
-            else:
-                resp.failure(f"Unexpected {resp.status_code}")
-
-    @task(1)
-    def invalid_request(self):
-        """
-        A small fraction of requests are malformed (missing code).
-        Lambda A should reject them quickly with 400 — verifies fast-path latency.
-        """
-        with self.client.post(
-            "/",
-            headers=self.headers,
-            json={"language": "python"},
-            name="POST /scan (invalid — no code)",
-            catch_response=True,
-        ) as resp:
-            if resp.status_code == 400:
+            if resp.status_code in (200, 202):
                 resp.success()
             else:
-                resp.failure(f"Expected 400, got {resp.status_code}")
-
-
-@events.test_start.add_listener
-def on_test_start(environment, **kwargs):
-    print("\n" + "=" * 60)
-    print("  SAST Platform Load Test")
-    print("  Scenario: class-wide simultaneous submission")
-    print(f"  Target:   {environment.host}")
-    print("=" * 60 + "\n")
+                resp.failure(f"Unexpected status {resp.status_code}: {resp.text[:200]}")
