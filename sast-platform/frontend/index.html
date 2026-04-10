@@ -123,9 +123,12 @@
               <span class="drop-hint">⬇ Drop a file here, or paste code below</span>
               <button class="btn-clear-code" id="btn-clear-code" onclick="clearCode()" title="Clear code">✕ Clear</button>
             </div>
-            <textarea id="code" class="code-input"
-                      placeholder="Paste your code here..." spellcheck="false"
-                      oninput="updateCodeStats()"></textarea>
+            <div class="code-editor-wrap">
+              <div class="line-numbers" id="line-numbers">1</div>
+              <textarea id="code" class="code-input"
+                        placeholder="Paste your code here..." spellcheck="false"
+                        oninput="updateCodeStats()"></textarea>
+            </div>
             <div class="code-stats" id="code-stats"></div>
           </div>
 

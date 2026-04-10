@@ -141,6 +141,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     reader.readAsText(file);
   });
+
+  // Sync line-number gutter scroll with textarea scroll
+  document.getElementById("code").addEventListener("scroll", () => {
+    const lineNumbers = document.getElementById("line-numbers");
+    if (lineNumbers) lineNumbers.scrollTop = document.getElementById("code").scrollTop;
+  });
 });
 
 function setStudentIdHint(id) {
@@ -641,11 +647,22 @@ function dismissError() {
 
 // ── Code stats ───────────────────────────────────────────────────────────────
 
+function updateLineNumbers() {
+  const textarea    = document.getElementById("code");
+  const lineNumbers = document.getElementById("line-numbers");
+  if (!lineNumbers) return;
+  const count = textarea.value ? textarea.value.split("\n").length : 1;
+  lineNumbers.textContent = Array.from({ length: count }, (_, i) => i + 1).join("\n");
+  lineNumbers.scrollTop = textarea.scrollTop;
+}
+
 function updateCodeStats() {
   const code  = document.getElementById("code").value;
   const stats = document.getElementById("code-stats");
   const clearBtn = document.getElementById("btn-clear-code");
   if (!stats) return;
+
+  updateLineNumbers();
 
   if (!code) {
     stats.textContent = "";

@@ -419,6 +419,31 @@ body {
 
 .drop-zone.drag-over .drop-hint { color: var(--accent); }
 
+.code-editor-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.line-numbers {
+  background: transparent;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 14px;
+  line-height: 1.65;
+  padding: 12px 10px 12px 8px;
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+  overflow: hidden;
+  min-width: 2em;
+  flex-shrink: 0;
+  white-space: pre;
+  opacity: 0.5;
+}
+
 .code-input {
   flex: 1;
   margin: 0;
@@ -429,7 +454,7 @@ body {
   font-family: "SF Mono", "Fira Code", "Consolas", monospace;
   font-size: 14px;
   line-height: 1.65;
-  padding: 12px 14px;
+  padding: 12px 14px 12px 10px;
   resize: none;
   outline: none;
   min-height: 0;
