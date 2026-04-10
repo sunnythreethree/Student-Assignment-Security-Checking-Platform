@@ -34,6 +34,7 @@ let _pollTimer       = null;
 let _pollDeadline    = null;
 let _currentInterval = POLL_INITIAL_MS;
 let _reportUrl       = null;
+let _currentReport   = null;
 
 // ── Student ID (localStorage) ─────────────────────────────────────────────────
 
@@ -61,14 +62,18 @@ function switchView(name) {
   if (navItem) navItem.classList.add("active");
 
   const title = document.getElementById("topbar-title");
-  if (title) title.textContent = name === "results" ? "Results & History" : "Scanner";
+  const titles = { scanner: "Scanner", results: "Results", history: "History" };
+  if (title) title.textContent = titles[name] || name;
 
-  if (name === "results") loadHistory();
+  if (name === "results" && !_currentReport) setResultsEmptyState(true);
+  if (name === "history") loadHistory();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  initDarkMode();
+  initTheme();
   // Restore student ID — show login modal if none saved
   const stored = localStorage.getItem(LS_STUDENT_ID);
   if (stored) {
@@ -221,6 +226,7 @@ function startPolling(scanId) {
   _pollDeadline    = Date.now() + POLL_TIMEOUT_MS;
 
   showRunning(scanId);
+  progressShow();
   _pollTimer = setTimeout(() => poll(scanId), _currentInterval);
 }
 
@@ -250,6 +256,7 @@ async function poll(scanId) {
   }
 
   if (data.status === "FAILED") {
+    progressFail();
     showFailed(scanId);
     showError(`Scan failed. (Scan ID: ${scanId})`);
     setSubmitLoading(false);
@@ -292,6 +299,7 @@ async function handleDone(statusData) {
     }
     const report = await reportRes.json();
     renderReport(report);
+    progressComplete();
     showDone();
   } catch (_) {
     showError("Could not fetch scan report. Check your connection.");
@@ -326,7 +334,7 @@ async function loadHistory() {
   const container = document.getElementById("history-content");
 
   if (studentId === "anonymous") {
-    container.innerHTML = '<div class="history-empty">Enter your Student ID in the sidebar to load history.</div>';
+    container.innerHTML = '<div class="history-empty">Enter your Student ID above to load history.</div>';
     return;
   }
 
@@ -344,16 +352,25 @@ async function loadHistory() {
       return;
     }
 
-    container.innerHTML = `<ul class="history-list">
-      ${scans.map(s => `
-        <li class="history-item" onclick="loadHistoryScan('${s.scan_id}')">
-          <span class="history-scan-id">${s.scan_id}</span>
-          <span class="history-lang">${s.language || "—"}</span>
-          <span class="history-date">${formatDate(s.created_at)}</span>
-          <span class="history-status ${s.status}">${s.status}</span>
-        </li>
-      `).join("")}
-    </ul>`;
+    container.innerHTML = `
+      <div class="history-table-header">
+        <span>Scan ID</span>
+        <span>Language</span>
+        <span>Date</span>
+        <span>Status</span>
+        <span></span>
+      </div>
+      <ul class="history-list">
+        ${scans.map(s => `
+          <li class="history-item" onclick="loadHistoryScan('${s.scan_id}')">
+            <span class="history-scan-id">${s.scan_id}</span>
+            <span class="history-lang">${s.language || "—"}</span>
+            <span class="history-date">${formatDate(s.created_at)}</span>
+            <span class="history-status ${s.status}">${s.status}</span>
+            <span class="history-action">View findings →</span>
+          </li>
+        `).join("")}
+      </ul>`;
   } catch (_) {
     container.innerHTML = '<div class="history-empty">Could not load history. Check your connection.</div>';
   }
@@ -368,6 +385,7 @@ async function loadHistoryScan(scanId) {
       const reportRes = await fetch(data.report_url);
       const report    = await reportRes.json();
       _currentScanId  = scanId;
+      switchView("results");
       renderReport(report);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
@@ -389,7 +407,17 @@ function formatDate(iso) {
 
 // ── Render report ─────────────────────────────────────────────────────────────
 
+function setResultsEmptyState(empty) {
+  document.getElementById("results-empty-state").style.display = empty ? "" : "none";
+  document.querySelector(".kpi-row").style.display             = empty ? "none" : "";
+  document.getElementById("result-meta-bar").style.display    = empty ? "none" : "";
+  document.querySelector(".findings-panel").style.display     = empty ? "none" : "";
+}
+
 function renderReport(report) {
+  _currentReport = report;
+  setResultsEmptyState(false);
+
   const summary = report?.summary || {};
   document.getElementById("kpi-high").textContent   = summary.HIGH   ?? 0;
   document.getElementById("kpi-medium").textContent = summary.MEDIUM ?? 0;
@@ -404,7 +432,85 @@ function renderReport(report) {
       `<span>Tool: <strong>${report?.tool || "—"}</strong></span>`;
   }
 
+  const dlBtn = document.getElementById("btn-download-md");
+  if (dlBtn) { dlBtn.disabled = false; dlBtn.title = "Download findings as Markdown"; }
+
+  const searchInput = document.getElementById("findings-search");
+  if (searchInput) searchInput.value = "";
+
   window.renderScanResults(report, "results");
+}
+
+function filterFindings(query) {
+  const q = query.trim().toLowerCase();
+  const rows = document.querySelectorAll("#results tbody tr");
+  let shown = 0;
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    const match = !q || text.includes(q);
+    row.style.display = match ? "" : "none";
+    if (match) shown++;
+  });
+
+  // show/hide empty state
+  let noMatch = document.getElementById("findings-no-match");
+  if (!noMatch) {
+    noMatch = document.createElement("div");
+    noMatch.id = "findings-no-match";
+    noMatch.className = "history-empty";
+    noMatch.textContent = "No findings match your search.";
+    document.getElementById("results").appendChild(noMatch);
+  }
+  noMatch.style.display = (q && shown === 0) ? "" : "none";
+}
+
+function downloadAsMarkdown() {
+  if (!_currentReport) return;
+
+  const r        = _currentReport;
+  const summary  = r.summary || {};
+  const findings = Array.isArray(r.findings) ? r.findings : [];
+  const date     = new Date().toLocaleString();
+
+  let md = `# Security Scan Report\n\n`;
+  md += `| Field | Value |\n|---|---|\n`;
+  md += `| **Scan ID** | ${r.scan_id || "—"} |\n`;
+  md += `| **Language** | ${r.language || "—"} |\n`;
+  md += `| **Tool** | ${r.tool || "—"} |\n`;
+  md += `| **Generated** | ${date} |\n\n`;
+
+  md += `## Summary\n\n`;
+  md += `| Severity | Count |\n|---|---|\n`;
+  md += `| 🔴 High | ${summary.HIGH ?? 0} |\n`;
+  md += `| 🟠 Medium | ${summary.MEDIUM ?? 0} |\n`;
+  md += `| 🟢 Low | ${summary.LOW ?? 0} |\n`;
+  md += `| **Total** | **${r.vuln_count ?? findings.length}** |\n\n`;
+
+  md += `## Findings\n\n`;
+
+  if (findings.length === 0) {
+    md += `_No findings._\n`;
+  } else {
+    md += `| # | Severity | Confidence | Line | Rule | Issue | Code Snippet |\n`;
+    md += `|---|---|---|---|---|---|---|\n`;
+    findings.forEach((f, i) => {
+      const sev      = String(f.severity || "LOW").toUpperCase();
+      const conf     = f.confidence || "UNKNOWN";
+      const line     = f.line ?? "—";
+      const rule     = f.rule_id || "UNKNOWN";
+      const issue    = (f.issue || "Unknown issue").replace(/\|/g, "\\|");
+      const snippet  = (f.code_snippet || "").replace(/\n/g, " ").replace(/\|/g, "\\|").trim();
+      md += `| ${i + 1} | ${sev} | ${conf} | ${line} | ${rule} | ${issue} | \`${snippet}\` |\n`;
+    });
+  }
+
+  const blob = new Blob([md], { type: "text/markdown" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `scan-${r.scan_id || "report"}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -449,6 +555,85 @@ function showError(html) {
 
 function dismissError() {
   document.getElementById("error-banner").classList.add("hidden");
+}
+
+// ── Progress bar ─────────────────────────────────────────────────────────────
+
+let _progressTimer = null;
+let _progressValue = 0;
+
+function progressShow() {
+  _progressValue = 0;
+  const wrap = document.getElementById("scan-progress-wrap");
+  const bar  = document.getElementById("scan-progress-bar");
+  wrap.classList.remove("hidden");
+  bar.style.background = "var(--accent)";
+  bar.style.width = "0%";
+  _tickProgress();
+}
+
+function _tickProgress() {
+  if (_progressTimer) clearTimeout(_progressTimer);
+  // Slow down as we approach 90%
+  const remaining = 90 - _progressValue;
+  const step = Math.max(0.5, remaining * 0.06);
+  _progressValue = Math.min(90, _progressValue + step);
+  document.getElementById("scan-progress-bar").style.width = _progressValue + "%";
+  const delay = 400 + (_progressValue / 90) * 800;
+  _progressTimer = setTimeout(_tickProgress, delay);
+}
+
+function progressComplete() {
+  if (_progressTimer) { clearTimeout(_progressTimer); _progressTimer = null; }
+  const bar = document.getElementById("scan-progress-bar");
+  bar.style.width = "100%";
+  setTimeout(() => {
+    const wrap = document.getElementById("scan-progress-wrap");
+    wrap.classList.add("hidden");
+    bar.style.width = "0%";
+  }, 600);
+}
+
+function progressFail() {
+  if (_progressTimer) { clearTimeout(_progressTimer); _progressTimer = null; }
+  const bar = document.getElementById("scan-progress-bar");
+  bar.style.background = "var(--red)";
+  bar.style.width = "100%";
+  setTimeout(() => {
+    const wrap = document.getElementById("scan-progress-wrap");
+    wrap.classList.add("hidden");
+    bar.style.width = "0%";
+  }, 800);
+}
+
+// ── Dark mode ─────────────────────────────────────────────────────────────────
+
+function setTheme(name) {
+  document.body.dataset.theme = name;
+  localStorage.setItem("sast_theme", name);
+  document.querySelectorAll(".theme-swatch").forEach(s => {
+    s.classList.toggle("active", s.dataset.theme === name);
+  });
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("sast_theme") || "green";
+  setTheme(saved);
+}
+
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle("dark");
+  localStorage.setItem("sast_dark_mode", isDark ? "1" : "0");
+  document.getElementById("dark-mode-icon").textContent  = isDark ? "☀️" : "🌙";
+  document.getElementById("dark-mode-label").textContent = isDark ? "Light Mode" : "Dark Mode";
+}
+
+function initDarkMode() {
+  if (localStorage.getItem("sast_dark_mode") === "1") {
+    document.body.classList.add("dark");
+    document.getElementById("dark-mode-icon").textContent  = "☀️";
+    document.getElementById("dark-mode-label").textContent = "Light Mode";
+  }
 }
 
 // ── Public API for results.js ─────────────────────────────────────────────────
