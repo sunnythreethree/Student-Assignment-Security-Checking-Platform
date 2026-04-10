@@ -58,7 +58,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Apply defaults that depend on PROJECT_NAME / ENVIRONMENT
-FRONTEND_BUCKET="${FRONTEND_BUCKET:-${PROJECT_NAME}-frontend-${ENVIRONMENT}}"
+# Append account ID so bucket names are globally unique (same convention as 01_setup_infra.sh)
+_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+FRONTEND_BUCKET="${FRONTEND_BUCKET:-${PROJECT_NAME}-frontend-${ENVIRONMENT}-${_ACCOUNT_ID}}"
 LAMBDA_A_STACK="${LAMBDA_A_STACK:-${PROJECT_NAME}-lambda-a}"
 
 # ── Colours ───────────────────────────────────────────────────────────────────

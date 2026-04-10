@@ -10,12 +10,11 @@
 #   6. 05_test_api.sh       → End-to-end smoke test (requires --student-key)
 #
 # Usage:
-#   ./deploy.sh --code-bucket <bucket> [OPTIONS]
-#
-# Required:
-#   --code-bucket    S3 bucket for Lambda deployment packages
+#   ./deploy.sh [OPTIONS]
 #
 # Optional:
+#   --code-bucket    S3 bucket for Lambda deployment packages
+#                    (default: sast-deploy-<account-id>, created automatically)
 #   --project        Project name prefix        (default: sast-platform)
 #   --env            Deployment environment      (default: dev)
 #   --region         AWS region                 (default: us-east-1)
@@ -64,22 +63,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Validation ─────────────────────────────────────────────────────────────────
-if [[ -z "$CODE_BUCKET" ]]; then
-  echo "ERROR: --code-bucket is required."
-  echo "       Usage: ./deploy.sh --code-bucket <s3-bucket> [OPTIONS]"
-  exit 1
-fi
-
 if [[ -n "$VPC_ID" && -z "$SUBNET_IDS" ]]; then
   echo "ERROR: --subnets is required when --vpc-id is set."
   exit 1
+fi
+
+# ── Auto-provision code bucket if not specified ────────────────────────────────
+# Default to sast-deploy-<account-id> so the bucket name is globally unique
+# and no manual pre-step is needed on a fresh Learner Lab session.
+if [[ -z "$CODE_BUCKET" ]]; then
+  _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  CODE_BUCKET="sast-deploy-${_ACCOUNT_ID}"
+  echo "[$(date '+%H:%M:%S')] --code-bucket not set, using default: $CODE_BUCKET"
+fi
+
+if ! aws s3api head-bucket --bucket "$CODE_BUCKET" --region "$AWS_REGION" &>/dev/null; then
+  echo "[$(date '+%H:%M:%S')] Bucket '$CODE_BUCKET' not found — creating it..."
+  aws s3api create-bucket --bucket "$CODE_BUCKET" --region "$AWS_REGION" > /dev/null
+  echo "[$(date '+%H:%M:%S')] ✓ Bucket created: s3://$CODE_BUCKET"
 fi
 
 # ── Export env vars consumed by child scripts ─────────────────────────────────
 export PROJECT_NAME ENVIRONMENT AWS_REGION CODE_BUCKET SKIP_TEST
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-step() { echo ""; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; echo "[$1/6] $2"; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
+step() { echo ""; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; echo "[$1/7] $2"; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
 ok()   { echo "[$(date '+%H:%M:%S')] ✓ $*"; }
 
 get_cf_output() {
@@ -108,6 +116,43 @@ fi
 printf "║  Smoke test: %-38s ║\n" "$([[ -n "$STUDENT_KEY" && "$SKIP_TEST" != "true" ]] && echo "enabled" || echo "skipped")"
 echo "╚══════════════════════════════════════════════════════╝"
 
+# ── Step 0: Pre-package Lambda zips → S3 code bucket ─────────────────────────
+# CloudFormation Lambda stacks reference lambda_a.zip / lambda_b.zip from the
+# code bucket.  On a fresh deploy those zips don't exist yet, so we package and
+# upload them BEFORE deploying the CF stacks.
+step 0 "Pre-packaging Lambda code → s3://$CODE_BUCKET"
+
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Lambda A (pure Python, no extra deps)
+_LAMBDA_A_BUILD="/tmp/sasc_lambda_a_prebuild"
+_LAMBDA_A_ZIP="/tmp/sasc_lambda_a_prebuild.zip"
+rm -rf "$_LAMBDA_A_BUILD" "$_LAMBDA_A_ZIP"
+mkdir -p "$_LAMBDA_A_BUILD"
+cp "$PROJECT_ROOT/lambda_a/"*.py "$_LAMBDA_A_BUILD/"
+find "$_LAMBDA_A_BUILD" -name "*.pyc" -delete 2>/dev/null || true
+(cd "$_LAMBDA_A_BUILD" && zip -qr "$_LAMBDA_A_ZIP" .)
+aws s3 cp "$_LAMBDA_A_ZIP" "s3://$CODE_BUCKET/lambda_a.zip" --region "$AWS_REGION"
+ok "lambda_a.zip uploaded to s3://$CODE_BUCKET"
+
+# Lambda B (needs bandit + deps from requirements.txt)
+_LAMBDA_B_BUILD="/tmp/sasc_lambda_b_prebuild"
+_LAMBDA_B_ZIP="/tmp/sasc_lambda_b_prebuild.zip"
+rm -rf "$_LAMBDA_B_BUILD" "$_LAMBDA_B_ZIP"
+mkdir -p "$_LAMBDA_B_BUILD"
+cp "$PROJECT_ROOT/lambda_b/"*.py "$_LAMBDA_B_BUILD/"
+cp "$PROJECT_ROOT/lambda_b/requirements.txt" "$_LAMBDA_B_BUILD/"
+rm -f "$_LAMBDA_B_BUILD/ecs_handler.py"
+python3 -m pip install --target "$_LAMBDA_B_BUILD" -r "$_LAMBDA_B_BUILD/requirements.txt" \
+  --quiet --upgrade
+find "$_LAMBDA_B_BUILD" -name "*.pyc" -delete 2>/dev/null || true
+find "$_LAMBDA_B_BUILD" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find "$_LAMBDA_B_BUILD" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+find "$_LAMBDA_B_BUILD" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+(cd "$_LAMBDA_B_BUILD" && zip -qr "$_LAMBDA_B_ZIP" .)
+aws s3 cp "$_LAMBDA_B_ZIP" "s3://$CODE_BUCKET/lambda_b.zip" --region "$AWS_REGION"
+ok "lambda_b.zip uploaded to s3://$CODE_BUCKET"
+
 # ── Step 1: CloudFormation infrastructure ─────────────────────────────────────
 step 1 "Deploying CloudFormation stacks (infra)"
 
@@ -125,7 +170,7 @@ INFRA_ARGS=(
 ok "Infrastructure stacks deployed"
 
 # ── Step 2: Lambda A ──────────────────────────────────────────────────────────
-step 2 "Deploying Lambda A (API layer)"
+step 2 "Updating Lambda A code (API layer)"
 
 "$SCRIPT_DIR/02_deploy_lambda_a.sh" \
   --code-bucket "$CODE_BUCKET" \
@@ -136,7 +181,7 @@ step 2 "Deploying Lambda A (API layer)"
 ok "Lambda A deployed"
 
 # ── Step 3: Lambda B ──────────────────────────────────────────────────────────
-step 3 "Deploying Lambda B (scanner engine)"
+step 3 "Updating Lambda B code (scanner engine)"
 
 # 03_deploy_lambda_b.sh reads PROJECT_NAME, ENVIRONMENT, AWS_REGION, CODE_BUCKET from env
 SKIP_TEST="true" "$SCRIPT_DIR/03_deploy_lambda_b.sh"
@@ -155,6 +200,7 @@ fi
 # ── Step 5: Frontend ──────────────────────────────────────────────────────────
 step 5 "Uploading frontend to S3"
 
+
 "$SCRIPT_DIR/04_upload_frontend.sh" \
   --project "$PROJECT_NAME" \
   --env     "$ENVIRONMENT" \
@@ -163,6 +209,7 @@ ok "Frontend uploaded"
 
 # ── Step 6: Smoke test (optional) ─────────────────────────────────────────────
 step 6 "End-to-end smoke test"
+
 
 if [[ "$SKIP_TEST" == "true" ]]; then
   echo "Skipped (--skip-test)"
