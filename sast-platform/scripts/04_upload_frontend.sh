@@ -4,7 +4,7 @@
 # What it does:
 #   1. Pre-flight: verifies AWS CLI, credentials, and bucket existence
 #   2. Reads Lambda A Function URL from CloudFormation outputs
-#   3. Injects the URL into app.js via the __LAMBDA_URL__ placeholder
+#   3. Writes the API URL into config.json (fetched at runtime by app.js)
 #   4. Syncs all frontend files to the S3 frontend bucket with correct
 #      Content-Type headers per file type
 #   5. Prints the live S3 website URL

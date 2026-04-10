@@ -11,8 +11,10 @@ let API_BASE_URL = null;
 
 async function initConfig() {
   const res = await fetch("/config.json");
+  if (!res.ok) throw new Error(`config.json fetch failed: HTTP ${res.status}`);
   const cfg = await res.json();
-  API_BASE_URL = (cfg.apiUrl || "").replace(/\/$/, "");
+  if (!cfg.apiUrl) throw new Error("config.json is missing required field: apiUrl");
+  API_BASE_URL = cfg.apiUrl.replace(/\/$/, "");
 }
 
 const POLL_INITIAL_MS  = 2000;
