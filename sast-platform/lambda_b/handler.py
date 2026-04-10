@@ -439,12 +439,19 @@ def handle_ecs_fallback(scan_id: str, language: str, student_id: str,
                     {
                         'name': 'scanner-container',
                         'environment': [
-                            {'name': 'SCAN_ID',      'value': scan_id},
-                            {'name': 'STUDENT_ID',   'value': student_id},
-                            {'name': 'LANGUAGE',     'value': language},
+                            {'name': 'SCAN_ID',             'value': scan_id},
+                            {'name': 'STUDENT_ID',          'value': student_id},
+                            {'name': 'LANGUAGE',            'value': language},
                             # Pass the S3 key, not the raw code.
                             # ecs_handler._fetch_code() downloads it from S3.
-                            {'name': 'S3_CODE_KEY',  'value': s3_code_key},
+                            {'name': 'S3_CODE_KEY',         'value': s3_code_key},
+                            # Forward current bucket/table names so the ECS container
+                            # stays in sync with Lambda B even when the bucket name
+                            # changes (e.g. PR #113 appends account ID to bucket names).
+                            # Without these overrides the container falls back to the
+                            # stale values baked into the ECS task definition.
+                            {'name': 'S3_BUCKET_NAME',      'value': os.environ.get('S3_BUCKET_NAME', '')},
+                            {'name': 'DYNAMODB_TABLE_NAME', 'value': os.environ.get('DYNAMODB_TABLE_NAME', 'ScanResults')},
                         ]
                     }
                 ]
