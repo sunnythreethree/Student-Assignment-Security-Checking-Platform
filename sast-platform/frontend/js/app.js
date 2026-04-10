@@ -448,8 +448,6 @@ function renderReport(report) {
   animateCount("kpi-medium", medium);
   animateCount("kpi-low",    low);
   animateCount("kpi-total",  total);
-  renderDonut(high, medium, low);
-
   const meta = document.getElementById("result-meta-bar");
   if (meta) {
     meta.innerHTML =
@@ -709,51 +707,6 @@ function animateCount(id, target, duration = 900) {
   requestAnimationFrame(tick);
 }
 
-// ── Donut chart ───────────────────────────────────────────────────────────────
-
-function renderDonut(high, medium, low) {
-  const svg = document.getElementById("donut-svg");
-  if (!svg) return;
-
-  const r = 38, cx = 50, cy = 50;
-  const circ = 2 * Math.PI * r;
-  const total = high + medium + low;
-
-  if (total === 0) {
-    svg.innerHTML = `
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="10"/>
-      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
-            font-size="18" font-weight="800" fill="var(--text-muted)">—</text>`;
-    return;
-  }
-
-  const segs = [
-    { val: high,   color: "var(--sev-high-fg)" },
-    { val: medium, color: "var(--sev-med-fg)"  },
-    { val: low,    color: "var(--sev-low-fg)"  },
-  ];
-
-  let cumulative = 0;
-  const circles = segs.map(s => {
-    if (s.val === 0) return "";
-    const len = (s.val / total) * circ;
-    const gap = circ - len;
-    const offset = circ - cumulative;
-    cumulative += len;
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
-      stroke="${s.color}" stroke-width="10"
-      stroke-dasharray="${len} ${gap}"
-      stroke-dashoffset="${offset}"
-      transform="rotate(-90 ${cx} ${cy})"/>`;
-  }).join("");
-
-  svg.innerHTML = `
-    ${circles}
-    <text x="${cx}" y="${cy - 7}" text-anchor="middle" dominant-baseline="central"
-          font-size="20" font-weight="800" fill="var(--text)">${total}</text>
-    <text x="${cx}" y="${cy + 13}" text-anchor="middle" dominant-baseline="central"
-          font-size="10" letter-spacing="1" fill="var(--text-muted)">TOTAL</text>`;
-}
 
 // ── Progress bar ─────────────────────────────────────────────────────────────
 
