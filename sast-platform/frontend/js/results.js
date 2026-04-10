@@ -83,7 +83,14 @@ function attachRefreshHandler(report, container) {
 		btn.textContent = "Refreshing...";
 		try {
 			const fresh = await window.pollStatus(report.scan_id);
-			renderScanResults(fresh, container);
+			if (!fresh.report_url) throw new Error("No download URL in refreshed status.");
+			const reportRes  = await fetch(fresh.report_url);
+			if (!reportRes.ok) throw new Error(`Fetching report failed (${reportRes.status}).`);
+			const freshReport = await reportRes.json();
+			// Carry the new presigned URL into the report so the download section renders.
+			freshReport.report_url            = fresh.report_url;
+			freshReport.report_url_expires_at = fresh.report_url_expires_at;
+			renderScanResults(freshReport, container);
 		} catch (err) {
 			btn.disabled    = false;
 			btn.textContent = "Refresh link";
