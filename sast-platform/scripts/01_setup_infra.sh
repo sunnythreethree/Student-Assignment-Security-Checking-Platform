@@ -77,9 +77,12 @@ STACK_ECS="${PROJECT_NAME}-ecs"
 STACK_CLOUDWATCH="${PROJECT_NAME}-cloudwatch"
 
 # Shared resource names (consistent across stacks)
+# Append the AWS account ID so bucket names are globally unique across
+# Learner Lab sessions (S3 bucket names share a single global namespace).
 TABLE_NAME="ScanResults"
-REPORT_BUCKET="${PROJECT_NAME}-reports-${ENVIRONMENT}"
-FRONTEND_BUCKET="${PROJECT_NAME}-frontend-${ENVIRONMENT}"
+_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+REPORT_BUCKET="${PROJECT_NAME}-reports-${ENVIRONMENT}-${_ACCOUNT_ID}"
+FRONTEND_BUCKET="${PROJECT_NAME}-frontend-${ENVIRONMENT}-${_ACCOUNT_ID}"
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 log()  { echo "[$(date '+%H:%M:%S')] $*"; }
