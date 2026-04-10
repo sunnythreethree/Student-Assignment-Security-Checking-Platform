@@ -136,6 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const reader = new FileReader();
     reader.onload = ev => {
       document.getElementById("code").value = ev.target.result;
+      updateCodeStats();
       dismissError();
     };
     reader.readAsText(file);
@@ -409,7 +410,7 @@ function formatDate(iso) {
 
 function setResultsEmptyState(empty) {
   document.getElementById("results-empty-state").style.display = empty ? "" : "none";
-  document.querySelector(".kpi-row").style.display             = empty ? "none" : "";
+  document.querySelector(".results-top").style.display         = empty ? "none" : "";
   document.getElementById("result-meta-bar").style.display    = empty ? "none" : "";
   document.querySelector(".findings-panel").style.display     = empty ? "none" : "";
 }
@@ -419,10 +420,16 @@ function renderReport(report) {
   setResultsEmptyState(false);
 
   const summary = report?.summary || {};
-  document.getElementById("kpi-high").textContent   = summary.HIGH   ?? 0;
-  document.getElementById("kpi-medium").textContent = summary.MEDIUM ?? 0;
-  document.getElementById("kpi-low").textContent    = summary.LOW    ?? 0;
-  document.getElementById("kpi-total").textContent  = report?.vuln_count ?? 0;
+  const high   = summary.HIGH   ?? 0;
+  const medium = summary.MEDIUM ?? 0;
+  const low    = summary.LOW    ?? 0;
+  const total  = report?.vuln_count ?? 0;
+
+  animateCount("kpi-high",   high);
+  animateCount("kpi-medium", medium);
+  animateCount("kpi-low",    low);
+  animateCount("kpi-total",  total);
+  renderDonut(high, medium, low);
 
   const meta = document.getElementById("result-meta-bar");
   if (meta) {
@@ -438,30 +445,102 @@ function renderReport(report) {
   const searchInput = document.getElementById("findings-search");
   if (searchInput) searchInput.value = "";
 
+  // reset severity filter
+  _activeSeverity = "all";
+  document.querySelectorAll(".sev-chip").forEach(c =>
+    c.classList.toggle("active", c.dataset.sev === "all")
+  );
+
+  // toast
+  const highCount = report?.summary?.HIGH ?? 0;
+  const sub = highCount > 0
+    ? `${highCount} High · ${report?.summary?.MEDIUM ?? 0} Medium · ${report?.summary?.LOW ?? 0} Low`
+    : "No high-severity findings";
+  showToast("Scan complete", sub);
+
   window.renderScanResults(report, "results");
 }
 
+let _activeSeverity = "all";
+
 function filterFindings(query) {
-  const q = query.trim().toLowerCase();
+  applyFindingsFilter();
+}
+
+function filterBySeverity(sev) {
+  _activeSeverity = sev;
+  document.querySelectorAll(".sev-chip").forEach(c =>
+    c.classList.toggle("active", c.dataset.sev === sev)
+  );
+  applyFindingsFilter();
+}
+
+function applyFindingsFilter() {
+  const q   = (document.getElementById("findings-search")?.value || "").trim().toLowerCase();
+  const sev = _activeSeverity;
   const rows = document.querySelectorAll("#results tbody tr");
   let shown = 0;
+
   rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    const match = !q || text.includes(q);
-    row.style.display = match ? "" : "none";
-    if (match) shown++;
+    const text      = row.textContent.toLowerCase();
+    const badge     = row.querySelector(".severity-badge");
+    const rowSev    = badge ? badge.textContent.trim() : "";
+    const matchQ    = !q || text.includes(q);
+    const matchSev  = sev === "all" || rowSev === sev;
+    const visible   = matchQ && matchSev;
+    row.style.display = visible ? "" : "none";
+    if (visible) shown++;
   });
 
-  // show/hide empty state
   let noMatch = document.getElementById("findings-no-match");
   if (!noMatch) {
     noMatch = document.createElement("div");
     noMatch.id = "findings-no-match";
     noMatch.className = "history-empty";
-    noMatch.textContent = "No findings match your search.";
     document.getElementById("results").appendChild(noMatch);
   }
-  noMatch.style.display = (q && shown === 0) ? "" : "none";
+  const active = q || sev !== "all";
+  noMatch.style.display = (active && shown === 0) ? "" : "none";
+  noMatch.textContent   = "No findings match your filter.";
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+function showToast(title, sub = "") {
+  const container = document.getElementById("toast-container");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `
+    <span class="toast-icon">✓</span>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      ${sub ? `<div class="toast-sub">${sub}</div>` : ""}
+    </div>`;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add("out");
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+  }, 4000);
+}
+
+// ── Jump to line ──────────────────────────────────────────────────────────────
+
+function jumpToLine(lineNum) {
+  if (!lineNum) return;
+  switchView("scanner");
+  const ta = document.getElementById("code");
+  if (!ta || !ta.value) return;
+
+  const lines = ta.value.split("\n");
+  let pos = 0;
+  for (let i = 0; i < Math.min(lineNum - 1, lines.length); i++) {
+    pos += lines[i].length + 1;
+  }
+  const lineLen = (lines[lineNum - 1] || "").length;
+  ta.focus();
+  ta.setSelectionRange(pos, pos + lineLen);
+  const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 22;
+  ta.scrollTop = (lineNum - 1) * lineHeight - ta.clientHeight / 3;
 }
 
 function downloadAsMarkdown() {
@@ -555,6 +634,95 @@ function showError(html) {
 
 function dismissError() {
   document.getElementById("error-banner").classList.add("hidden");
+}
+
+// ── Code stats ───────────────────────────────────────────────────────────────
+
+function updateCodeStats() {
+  const code  = document.getElementById("code").value;
+  const stats = document.getElementById("code-stats");
+  const clearBtn = document.getElementById("btn-clear-code");
+  if (!stats) return;
+
+  if (!code) {
+    stats.textContent = "";
+    clearBtn?.classList.remove("visible");
+    return;
+  }
+
+  const lines = code.split("\n").length;
+  const bytes = new TextEncoder().encode(code).length;
+  const size  = bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+  stats.textContent = `${lines} lines · ${size}`;
+  clearBtn?.classList.add("visible");
+}
+
+function clearCode() {
+  document.getElementById("code").value = "";
+  updateCodeStats();
+  document.getElementById("code").focus();
+}
+
+// ── KPI animation ────────────────────────────────────────────────────────────
+
+function animateCount(id, target, duration = 900) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    el.textContent = Math.round(target * eased);
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  el.textContent = "0";
+  requestAnimationFrame(tick);
+}
+
+// ── Donut chart ───────────────────────────────────────────────────────────────
+
+function renderDonut(high, medium, low) {
+  const svg = document.getElementById("donut-svg");
+  if (!svg) return;
+
+  const r = 38, cx = 50, cy = 50;
+  const circ = 2 * Math.PI * r;
+  const total = high + medium + low;
+
+  if (total === 0) {
+    svg.innerHTML = `
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="10"/>
+      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+            font-size="18" font-weight="800" fill="var(--text-muted)">—</text>`;
+    return;
+  }
+
+  const segs = [
+    { val: high,   color: "var(--sev-high-fg)" },
+    { val: medium, color: "var(--sev-med-fg)"  },
+    { val: low,    color: "var(--sev-low-fg)"  },
+  ];
+
+  let cumulative = 0;
+  const circles = segs.map(s => {
+    if (s.val === 0) return "";
+    const len = (s.val / total) * circ;
+    const gap = circ - len;
+    const offset = circ - cumulative;
+    cumulative += len;
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+      stroke="${s.color}" stroke-width="10"
+      stroke-dasharray="${len} ${gap}"
+      stroke-dashoffset="${offset}"
+      transform="rotate(-90 ${cx} ${cy})"/>`;
+  }).join("");
+
+  svg.innerHTML = `
+    ${circles}
+    <text x="${cx}" y="${cy - 7}" text-anchor="middle" dominant-baseline="central"
+          font-size="20" font-weight="800" fill="var(--text)">${total}</text>
+    <text x="${cx}" y="${cy + 13}" text-anchor="middle" dominant-baseline="central"
+          font-size="10" letter-spacing="1" fill="var(--text-muted)">TOTAL</text>`;
 }
 
 // ── Progress bar ─────────────────────────────────────────────────────────────
