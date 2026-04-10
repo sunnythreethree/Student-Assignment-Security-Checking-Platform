@@ -236,10 +236,12 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
         logger.info(f"Fetching code from S3 - scan_id: {scan_id}, key: {s3_code_key}")
         code = _fetch_code_from_s3(s3_bucket_name, s3_code_key)
 
-        # Route large Python submissions to ECS to avoid Lambda timeout/OOM.
+        # Route large submissions to ECS to avoid Lambda timeout/OOM — only when ECS is configured.
         code_bytes = len(code.encode('utf-8'))
         semgrep_languages = {'java', 'javascript', 'typescript', 'go', 'ruby', 'c', 'cpp'}
-        needs_ecs = (code_bytes > LAMBDA_CODE_SIZE_LIMIT) or (language.lower() in semgrep_languages)
+        needs_ecs = ecs_configured and (
+            (code_bytes > LAMBDA_CODE_SIZE_LIMIT) or (language.lower() in semgrep_languages)
+        )
         if needs_ecs:
             reason = (
                 f"code size {code_bytes} bytes exceeds {LAMBDA_CODE_SIZE_LIMIT} limit"
