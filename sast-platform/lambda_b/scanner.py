@@ -147,8 +147,13 @@ class SecurityScanner:
     def _scan_with_teacher_scanner(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
         Use the teacher's Node.js scanner.js for JavaScript/TypeScript.
-        Calls run_scanner.mjs via subprocess and returns its JSON output.
+        Falls back to Semgrep if Node.js is not available (e.g. plain Lambda runtime).
         """
+        import shutil
+        if not shutil.which('node'):
+            logger.warning("node not found in PATH — falling back to Semgrep for %s", scan_id)
+            return self._scan_with_semgrep(code, language, scan_id, timeout)
+
         logger.info("starting teacher scanner (JS) for %s", scan_id)
 
         ext_map = {'javascript': '.js', 'js': '.js', 'typescript': '.ts'}

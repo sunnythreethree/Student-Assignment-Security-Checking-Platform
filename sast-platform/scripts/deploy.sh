@@ -167,6 +167,10 @@ rm -rf "$_LAMBDA_B_BUILD" "$_LAMBDA_B_ZIP"
 mkdir -p "$_LAMBDA_B_BUILD"
 cp "$PROJECT_ROOT/lambda_b/"*.py "$_LAMBDA_B_BUILD/"
 cp "$PROJECT_ROOT/lambda_b/requirements.txt" "$_LAMBDA_B_BUILD/"
+# Include teacher's Node.js scanner files
+cp "$PROJECT_ROOT/lambda_b/scanner.js"    "$_LAMBDA_B_BUILD/" 2>/dev/null || true
+cp "$PROJECT_ROOT/lambda_b/run_scanner.mjs" "$_LAMBDA_B_BUILD/" 2>/dev/null || true
+cp "$PROJECT_ROOT/lambda_b/package.json"  "$_LAMBDA_B_BUILD/" 2>/dev/null || true
 rm -f "$_LAMBDA_B_BUILD/ecs_handler.py"
 python3 -m pip install --target "$_LAMBDA_B_BUILD" -r "$_LAMBDA_B_BUILD/requirements.txt" \
   --quiet --upgrade
