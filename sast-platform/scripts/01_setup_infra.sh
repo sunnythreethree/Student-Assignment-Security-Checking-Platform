@@ -100,20 +100,50 @@ deploy_stack() {
 
   local param_args=()
   for p in "${params[@]}"; do
-    param_args+=(--parameter-overrides "$p")
+    param_args+=(ParameterKey="${p%%=*}",ParameterValue="${p#*=}")
   done
 
-  if aws cloudformation deploy \
-    --stack-name "$stack_name" \
-    --template-file "$template_file" \
-    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-    --region "$AWS_REGION" \
-    "${param_args[@]}" \
-    --no-fail-on-empty-changeset; then
-    ok "Stack deployed: $stack_name"
+  # Check if stack already exists
+  local stack_status
+  stack_status=$(aws cloudformation describe-stacks \
+    --stack-name "$stack_name" --region "$AWS_REGION" \
+    --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+  if [[ "$stack_status" == "DOES_NOT_EXIST" ]]; then
+    # Create new stack (bypasses changeset hooks in Learner Lab)
+    aws cloudformation create-stack \
+      --stack-name "$stack_name" \
+      --template-body "file://$template_file" \
+      --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+      --region "$AWS_REGION" \
+      $([[ ${#param_args[@]} -gt 0 ]] && echo "--parameters ${param_args[*]}") \
+      > /dev/null
+    aws cloudformation wait stack-create-complete \
+      --stack-name "$stack_name" --region "$AWS_REGION"
   else
-    fail "Stack deployment failed: $stack_name"
+    # Update existing stack
+    local update_out
+    if update_out=$(aws cloudformation update-stack \
+      --stack-name "$stack_name" \
+      --template-body "file://$template_file" \
+      --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+      --region "$AWS_REGION" \
+      $([[ ${#param_args[@]} -gt 0 ]] && echo "--parameters ${param_args[*]}") \
+      2>&1); then
+      aws cloudformation wait stack-update-complete \
+        --stack-name "$stack_name" --region "$AWS_REGION"
+    else
+      # No changes = not an error
+      if echo "$update_out" | grep -q "No updates are to be performed"; then
+        log "  No changes to stack: $stack_name"
+      else
+        echo "$update_out" >&2
+        fail "Stack update failed: $stack_name"
+      fi
+    fi
   fi
+
+  ok "Stack deployed: $stack_name"
 }
 
 get_output() {
