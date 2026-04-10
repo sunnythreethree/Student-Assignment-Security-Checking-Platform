@@ -122,7 +122,10 @@ get_lambda_url_from_cf() {
   echo "${url%/}"
 }
 
-# ── Build step: copy to temp dir and inject Lambda URL ────────────────────────
+# ── Build step: copy to temp dir and write config.json ───────────────────────
+#
+# config.json is fetched at runtime by app.js — no URL is baked into the JS
+# bundle, so updating the endpoint only requires re-deploying this one file.
 
 build_frontend() {
   local lambda_url="$1"
@@ -132,22 +135,13 @@ build_frontend() {
   cp -r "$FRONTEND_DIR/." "$BUILD_DIR/"
 
   if [[ "$SKIP_INJECT" == "true" ]]; then
-    warn "Skipping URL injection (--skip-inject). API_BASE_URL will remain as placeholder."
+    warn "Skipping config.json generation (--skip-inject)."
     return
   fi
 
-  local app_js="$BUILD_DIR/js/app.js"
-
-  if grep -q "__LAMBDA_URL__" "$app_js"; then
-    # sed -i behaves differently on macOS vs Linux
-    # Use a .bak pattern that works on both
-    sed -i.bak "s|__LAMBDA_URL__|${lambda_url}|g" "$app_js" && rm -f "${app_js}.bak"
-    log "Injected Lambda URL into js/app.js"
-    log "  API_BASE_URL = \"$lambda_url\""
-  else
-    warn "__LAMBDA_URL__ placeholder not found in app.js — URL injection skipped."
-    warn "The frontend will not be able to reach the backend."
-  fi
+  printf '{"apiUrl":"%s"}' "$lambda_url" > "$BUILD_DIR/config.json"
+  log "Generated config.json"
+  log "  apiUrl = \"$lambda_url\""
 }
 
 # ── Upload: sync each file type with correct Content-Type ─────────────────────
@@ -181,7 +175,7 @@ upload_frontend() {
     --cache-control "no-cache, no-store, must-revalidate"
   log "  ✓ CSS uploaded"
 
-  # JavaScript — no-cache because app.js embeds the injected Lambda URL
+  # JavaScript
   aws s3 sync "$BUILD_DIR" "s3://$FRONTEND_BUCKET" \
     --region "$AWS_REGION" \
     --delete \
@@ -190,6 +184,15 @@ upload_frontend() {
     --content-type "application/javascript; charset=utf-8" \
     --cache-control "no-cache, no-store, must-revalidate"
   log "  ✓ JavaScript uploaded"
+
+  # config.json — no-cache so URL changes are picked up immediately
+  if [[ -f "$BUILD_DIR/config.json" ]]; then
+    aws s3 cp "$BUILD_DIR/config.json" "s3://$FRONTEND_BUCKET/config.json" \
+      --region "$AWS_REGION" \
+      --content-type "application/json" \
+      --cache-control "no-cache, no-store, must-revalidate"
+    log "  ✓ config.json uploaded"
+  fi
 
   # Everything else (favicon, fonts, images…) — no explicit Content-Type override
   aws s3 sync "$BUILD_DIR" "s3://$FRONTEND_BUCKET" \

@@ -2,11 +2,18 @@
  * app.js — Frontend logic
  * CS6620 Group 9
  *
- * API_BASE_URL is replaced at deploy time by 04_upload_frontend.sh
- * using: sed -i "s|__LAMBDA_URL__|$LAMBDA_URL|g" app.js
+ * API_BASE_URL is loaded at runtime from /config.json (written to S3 by
+ * 04_upload_frontend.sh). This avoids baking the URL into the JS bundle,
+ * so the endpoint can be updated by re-deploying config.json alone.
  */
 
-const API_BASE_URL = "__LAMBDA_URL__";
+let API_BASE_URL = null;
+
+async function initConfig() {
+  const res = await fetch("/config.json");
+  const cfg = await res.json();
+  API_BASE_URL = (cfg.apiUrl || "").replace(/\/$/, "");
+}
 
 const POLL_INITIAL_MS  = 2000;
 const POLL_BACKOFF     = 1.5;
@@ -71,7 +78,8 @@ function switchView(name) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  await initConfig();
   initDarkMode();
   initTheme();
   // Restore student ID — show login modal if none saved
