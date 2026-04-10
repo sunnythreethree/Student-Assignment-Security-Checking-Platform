@@ -10,7 +10,22 @@ import sys
 import tempfile
 import logging
 
+import pattern_scanner as _pattern_scanner
+
 logger = logging.getLogger(__name__)
+
+
+def _semgrep_available() -> bool:
+    """Return True if semgrep can be invoked via the current Python executable."""
+    try:
+        result = subprocess.run(
+            [sys.executable, '-m', 'semgrep', '--version'],
+            capture_output=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 # Prefer locally-bundled rules (written into the image at build time) so the
 # container does not need outbound internet access at scan time.  Fall back to
@@ -55,7 +70,14 @@ class SecurityScanner:
                 if language.lower() == 'python':
                     return self._scan_with_bandit(code, scan_id, timeout)
                 elif language.lower() in ['java', 'javascript', 'js', 'typescript', 'go', 'ruby', 'c', 'cpp']:
-                    return self._scan_with_semgrep(code, language, scan_id, timeout)
+                    if _semgrep_available():
+                        return self._scan_with_semgrep(code, language, scan_id, timeout)
+                    logger.info(
+                        "semgrep not available — using built-in pattern scanner for %s (scan_id: %s)",
+                        language, scan_id,
+                    )
+                    result = _pattern_scanner.scan(code, language, scan_id)
+                    return {'scan_id': scan_id, 'language': language, 'tool': 'pattern', 'raw_output': result}
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
 

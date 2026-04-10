@@ -108,6 +108,19 @@ def parse_semgrep_output(raw_output: Dict[str, Any], scan_id: str, language: str
 	}
 
 
+def parse_pattern_output(raw_output: Dict[str, Any], scan_id: str, language: str) -> Dict[str, Any]:
+	findings: List[Dict[str, Any]] = raw_output.get("findings", [])
+	summary: Dict[str, int] = raw_output.get("summary", {"HIGH": 0, "MEDIUM": 0, "LOW": 0})
+	return {
+		"scan_id": scan_id,
+		"language": language,
+		"tool": "pattern",
+		"findings": findings,
+		"summary": summary,
+		"vuln_count": len(findings),
+	}
+
+
 def normalize_result(tool: str, raw_output: Dict[str, Any], scan_id: str, language: str) -> Dict[str, Any]:
 	tool_name = (tool or "").strip().lower()
 
@@ -115,6 +128,8 @@ def normalize_result(tool: str, raw_output: Dict[str, Any], scan_id: str, langua
 		return parse_bandit_output(raw_output or {}, scan_id=scan_id, language=language)
 	if tool_name == "semgrep":
 		return parse_semgrep_output(raw_output or {}, scan_id=scan_id, language=language)
+	if tool_name == "pattern":
+		return parse_pattern_output(raw_output or {}, scan_id=scan_id, language=language)
 
 	raise ValueError(f"Unsupported tool: {tool}")
 
