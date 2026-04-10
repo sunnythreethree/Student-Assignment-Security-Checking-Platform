@@ -98,22 +98,54 @@ deploy_stack() {
   log "Deploying stack: $stack_name"
   log "  Template: $template_file"
 
+  # Convert "Key=Value" overrides to CloudFormation ParameterKey/ParameterValue format.
+  # Using create-stack/update-stack instead of "cloudformation deploy" to avoid
+  # the AWS::EarlyValidation::ResourceExistenceCheck changeset hook that fails in
+  # Learner Lab environments even when all parameters are valid.
   local param_args=()
   for p in "${params[@]}"; do
-    param_args+=(--parameter-overrides "$p")
+    local key="${p%%=*}"
+    local val="${p#*=}"
+    param_args+=(ParameterKey="${key}",ParameterValue="${val}")
   done
 
-  if aws cloudformation deploy \
-    --stack-name "$stack_name" \
-    --template-file "$template_file" \
-    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-    --region "$AWS_REGION" \
-    "${param_args[@]}" \
-    --no-fail-on-empty-changeset; then
-    ok "Stack deployed: $stack_name"
+  local cf_params=()
+  [[ ${#param_args[@]} -gt 0 ]] && cf_params=(--parameters "${param_args[@]}")
+
+  if aws cloudformation describe-stacks \
+       --stack-name "$stack_name" --region "$AWS_REGION" &>/dev/null; then
+    # Stack exists — update it (ignore "No updates are to be performed" exit code 255)
+    local out
+    out=$(aws cloudformation update-stack \
+      --stack-name "$stack_name" \
+      --template-body "file://$template_file" \
+      --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+      --region "$AWS_REGION" \
+      "${cf_params[@]}" 2>&1) || {
+      if echo "$out" | grep -q "No updates are to be performed"; then
+        ok "Stack up-to-date (no changes): $stack_name"
+        return 0
+      fi
+      fail "Stack update failed: $stack_name — $out"
+    }
+    aws cloudformation wait stack-update-complete \
+      --stack-name "$stack_name" --region "$AWS_REGION" || \
+      fail "Stack update did not complete successfully: $stack_name"
   else
-    fail "Stack deployment failed: $stack_name"
+    # Stack does not exist — create it
+    aws cloudformation create-stack \
+      --stack-name "$stack_name" \
+      --template-body "file://$template_file" \
+      --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+      --region "$AWS_REGION" \
+      "${cf_params[@]}" || \
+      fail "Stack creation failed: $stack_name"
+    aws cloudformation wait stack-create-complete \
+      --stack-name "$stack_name" --region "$AWS_REGION" || \
+      fail "Stack creation did not complete successfully: $stack_name"
   fi
+
+  ok "Stack deployed: $stack_name"
 }
 
 get_output() {
