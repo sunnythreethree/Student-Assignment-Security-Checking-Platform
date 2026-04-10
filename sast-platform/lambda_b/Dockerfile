@@ -32,11 +32,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Create non-root user for security (with home dir so semgrep can write state)
 RUN groupadd -r scanner && useradd -r -g scanner -m -d /home/scanner scanner
 
-# Install system dependencies
+# Install system dependencies + Node.js (for teacher's scanner.js)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -73,7 +75,7 @@ ENV PATH="/usr/local/bin:${PATH}"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import subprocess; subprocess.run(['bandit', '--version'], check=True); subprocess.run(['semgrep', '--version'], check=True)" || exit 1
+    CMD python -c "import subprocess; subprocess.run(['bandit', '--version'], check=True); subprocess.run(['semgrep', '--version'], check=True); subprocess.run(['node', '--version'], check=True)" || exit 1
 
 # Lambda entry point via awslambdaric
 # ECS tasks override this with: CMD ["python", "ecs_handler.py"]

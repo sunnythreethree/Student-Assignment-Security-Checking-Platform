@@ -1,7 +1,8 @@
 """
 this module runs security scans on code
 python -> bandit
-java/javascript/typescript/go/ruby/c/cpp -> semgrep
+javascript/typescript -> teacher's scanner.js (extended with additional semgrep rules)
+java/go/ruby/c/cpp -> semgrep
 """
 import json
 import os
@@ -54,7 +55,10 @@ class SecurityScanner:
                 # pick scanner based on language
                 if language.lower() == 'python':
                     return self._scan_with_bandit(code, scan_id, timeout)
-                elif language.lower() in ['java', 'javascript', 'js', 'typescript', 'go', 'ruby', 'c', 'cpp']:
+                elif language.lower() in ['javascript', 'js', 'typescript']:
+                    # Use teacher's Node.js scanner for JS/TS (as required by course)
+                    return self._scan_with_teacher_scanner(code, language, scan_id, timeout)
+                elif language.lower() in ['java', 'go', 'ruby', 'c', 'cpp']:
                     return self._scan_with_semgrep(code, language, scan_id, timeout)
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
@@ -140,9 +144,58 @@ class SecurityScanner:
         except Exception as e:
             raise RuntimeError(f"Bandit scan exception: {str(e)}")
 
+    def _scan_with_teacher_scanner(self, code: str, language: str, scan_id: str, timeout: int = 300):
+        """
+        Use the teacher's Node.js scanner.js for JavaScript/TypeScript.
+        Calls run_scanner.mjs via subprocess and returns its JSON output.
+        """
+        logger.info("starting teacher scanner (JS) for %s", scan_id)
+
+        ext_map = {'javascript': '.js', 'js': '.js', 'typescript': '.ts'}
+        file_ext = ext_map.get(language.lower(), '.js')
+        filename = f"code_{scan_id}{file_ext}"
+        code_file = os.path.join(self.temp_dir, filename)
+
+        with open(code_file, 'w', encoding='utf-8') as f:
+            f.write(code)
+
+        # Locate run_scanner.mjs next to this file
+        scanner_dir = os.path.dirname(os.path.abspath(__file__))
+        wrapper = os.path.join(scanner_dir, 'run_scanner.mjs')
+
+        try:
+            result = subprocess.run(
+                ['node', wrapper, code_file, filename],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=scanner_dir
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(f"Teacher scanner failed: {result.stderr}")
+
+            findings = json.loads(result.stdout) if result.stdout.strip() else []
+            logger.info("teacher scanner done, issues: %d", len(findings))
+
+            return {
+                'scan_id': scan_id,
+                'language': language,
+                'tool': 'teacher_scanner',
+                'raw_output': {'findings': findings},
+                'findings': findings
+            }
+
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Teacher scanner timed out")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Teacher scanner output parsing failed: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Teacher scanner exception: {str(e)}")
+
     def _scan_with_semgrep(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
-        use semgrep for java / js / typescript / go / ruby / c / cpp
+        use semgrep for java / go / ruby / c / cpp
         """
         logger.info("starting semgrep scan %s (config: %s)", scan_id, _SEMGREP_CONFIG)
 

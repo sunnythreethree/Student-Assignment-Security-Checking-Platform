@@ -108,6 +108,33 @@ def parse_semgrep_output(raw_output: Dict[str, Any], scan_id: str, language: str
 	}
 
 
+def parse_teacher_scanner_output(raw_output: Dict[str, Any], scan_id: str, language: str) -> Dict[str, Any]:
+	findings: List[Dict[str, Any]] = []
+
+	for item in raw_output.get("findings", []):
+		findings.append(
+			{
+				"line": _safe_int(item.get("line"), 0),
+				"severity": _normalize_severity(item.get("severity")),
+				"confidence": "MEDIUM",
+				"issue": str(item.get("description") or item.get("name") or "Unknown issue"),
+				"code_snippet": str(item.get("evidence") or "").strip(),
+				"rule_id": str(item.get("id") or "UNKNOWN"),
+			}
+		)
+
+	findings.sort(key=lambda finding: (SEVERITY_LEVELS.index(finding["severity"]), finding["line"]))
+	summary = _summary(findings)
+	return {
+		"scan_id": scan_id,
+		"language": language,
+		"tool": "teacher_scanner",
+		"findings": findings,
+		"summary": summary,
+		"vuln_count": len(findings),
+	}
+
+
 def normalize_result(tool: str, raw_output: Dict[str, Any], scan_id: str, language: str) -> Dict[str, Any]:
 	tool_name = (tool or "").strip().lower()
 
@@ -115,6 +142,8 @@ def normalize_result(tool: str, raw_output: Dict[str, Any], scan_id: str, langua
 		return parse_bandit_output(raw_output or {}, scan_id=scan_id, language=language)
 	if tool_name == "semgrep":
 		return parse_semgrep_output(raw_output or {}, scan_id=scan_id, language=language)
+	if tool_name == "teacher_scanner":
+		return parse_teacher_scanner_output(raw_output or {}, scan_id=scan_id, language=language)
 
 	raise ValueError(f"Unsupported tool: {tool}")
 
