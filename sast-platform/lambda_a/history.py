@@ -11,6 +11,7 @@ needing a GSI — student_id is already the partition key.
 """
 
 import logging
+import os
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -21,7 +22,7 @@ logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
 
-MAX_HISTORY_ITEMS = 50
+MAX_HISTORY_ITEMS = int(os.environ.get("MAX_HISTORY_ITEMS", "50"))
 
 
 def get_scan_history(student_id: str, table_name: str) -> list:

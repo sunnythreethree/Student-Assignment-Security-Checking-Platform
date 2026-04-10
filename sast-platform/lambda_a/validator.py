@@ -6,8 +6,10 @@ Input validation for POST /scan requests.
 All validation logic is isolated here so it can be unit tested independently.
 """
 
+import os
+
 SUPPORTED_LANGUAGES = ["python", "java", "javascript", "typescript", "go", "ruby", "c", "cpp"]
-MAX_CODE_BYTES = 1 * 1024 * 1024  # 1 MB
+MAX_CODE_BYTES = int(os.environ.get("MAX_CODE_BYTES", str(1 * 1024 * 1024)))  # default 1 MB
 
 
 def validate_scan_request(body: dict) -> tuple[bool, str]:

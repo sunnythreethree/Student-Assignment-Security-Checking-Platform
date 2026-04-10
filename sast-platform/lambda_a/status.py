@@ -8,6 +8,7 @@ so the frontend can fetch the report directly.
 """
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -19,16 +20,16 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource("dynamodb")
 s3       = boto3.client("s3")
 
-PRESIGNED_URL_EXPIRY   = 3600   # seconds (1 hour)
-SCAN_TTL_HOURS         = 1      # scans older than this are considered expired
-POLLING_INTERVAL_S     = 5      # suggested client poll interval (seconds)
-ECS_POLLING_INTERVAL_S = 30     # ECS tasks take longer — poll less aggressively
+PRESIGNED_URL_EXPIRY   = int(os.environ.get("PRESIGNED_URL_EXPIRY_SECONDS", "3600"))   # default 1 hour
+SCAN_TTL_HOURS         = int(os.environ.get("SCAN_TTL_HOURS", "1"))
+POLLING_INTERVAL_S     = int(os.environ.get("POLLING_INTERVAL_SECONDS", "5"))
+ECS_POLLING_INTERVAL_S = int(os.environ.get("ECS_POLLING_INTERVAL_SECONDS", "30"))
 
 # A scan stuck IN_PROGRESS longer than this threshold is considered stale:
 # Lambda B crashed or was OOM-killed before writing DONE/FAILED.
 # Covers Lambda B max timeout (900 s / 15 min) AND ECS Fargate scan timeout
 # (1800 s / 30 min) plus a 5-minute buffer.
-_STALE_IN_PROGRESS_MINUTES = 35
+_STALE_IN_PROGRESS_MINUTES = int(os.environ.get("STALE_SCAN_TIMEOUT_MINUTES", "35"))
 
 
 def get_scan_status(scan_id: str, student_id: str, table_name: str, s3_bucket: str) -> dict:
