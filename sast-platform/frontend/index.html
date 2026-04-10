@@ -119,9 +119,14 @@
           </div>
 
           <div id="drop-zone" class="drop-zone">
-            <div class="drop-hint">⬇ Drop a file here, or paste code below</div>
+            <div class="drop-hint-row">
+              <span class="drop-hint">⬇ Drop a file here, or paste code below</span>
+              <button class="btn-clear-code" id="btn-clear-code" onclick="clearCode()" title="Clear code">✕ Clear</button>
+            </div>
             <textarea id="code" class="code-input"
-                      placeholder="Paste your code here..." spellcheck="false"></textarea>
+                      placeholder="Paste your code here..." spellcheck="false"
+                      oninput="updateCodeStats()"></textarea>
+            <div class="code-stats" id="code-stats"></div>
           </div>
 
           <!-- Progress bar -->
@@ -161,23 +166,37 @@
     <!-- ── RESULTS VIEW ── -->
     <section class="view hidden" id="view-results">
 
-      <!-- KPI row -->
-      <div class="kpi-row">
-        <div class="kpi-card kpi-high">
-          <div class="kpi-label">High</div>
-          <div class="kpi-value" id="kpi-high">—</div>
+      <!-- KPI + Donut row -->
+      <div class="results-top">
+        <div class="kpi-row">
+          <div class="kpi-card kpi-high">
+            <div class="kpi-label">High</div>
+            <div class="kpi-value" id="kpi-high">—</div>
+          </div>
+          <div class="kpi-card kpi-medium">
+            <div class="kpi-label">Medium</div>
+            <div class="kpi-value" id="kpi-medium">—</div>
+          </div>
+          <div class="kpi-card kpi-low">
+            <div class="kpi-label">Low</div>
+            <div class="kpi-value" id="kpi-low">—</div>
+          </div>
+          <div class="kpi-card kpi-total">
+            <div class="kpi-label">Total</div>
+            <div class="kpi-value" id="kpi-total">—</div>
+          </div>
         </div>
-        <div class="kpi-card kpi-medium">
-          <div class="kpi-label">Medium</div>
-          <div class="kpi-value" id="kpi-medium">—</div>
-        </div>
-        <div class="kpi-card kpi-low">
-          <div class="kpi-label">Low</div>
-          <div class="kpi-value" id="kpi-low">—</div>
-        </div>
-        <div class="kpi-card kpi-total">
-          <div class="kpi-label">Total</div>
-          <div class="kpi-value" id="kpi-total">—</div>
+
+        <!-- Donut chart -->
+        <div class="panel donut-card">
+          <svg id="donut-svg" viewBox="0 0 100 100" width="100" height="100">
+            <circle cx="50" cy="50" r="38" fill="none" stroke="var(--border)" stroke-width="10"/>
+          </svg>
+          <div class="donut-legend">
+            <span class="donut-legend-item"><i class="legend-dot high"></i>High</span>
+            <span class="donut-legend-item"><i class="legend-dot med"></i>Med</span>
+            <span class="donut-legend-item"><i class="legend-dot low"></i>Low</span>
+          </div>
         </div>
       </div>
 
@@ -215,6 +234,12 @@
           <button class="btn-download-md" onclick="downloadAsMarkdown()" id="btn-download-md" disabled title="Load a scan first">
             ↓ Download
           </button>
+        </div>
+        <div class="findings-filter-bar">
+          <button class="sev-chip active" data-sev="all"    onclick="filterBySeverity('all')">All</button>
+          <button class="sev-chip"        data-sev="HIGH"   onclick="filterBySeverity('HIGH')">High</button>
+          <button class="sev-chip"        data-sev="MEDIUM" onclick="filterBySeverity('MEDIUM')">Medium</button>
+          <button class="sev-chip"        data-sev="LOW"    onclick="filterBySeverity('LOW')">Low</button>
         </div>
         <div id="results"></div>
       </div>
@@ -259,6 +284,9 @@
       <div class="modal-body">Your code has been submitted for scanning.<br>Results will be ready in the <strong>Results &amp; History</strong> tab.</div>
     </div>
   </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
 
   <script src="js/results.js"></script>
   <script src="js/app.js"></script>

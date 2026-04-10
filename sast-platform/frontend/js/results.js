@@ -112,11 +112,15 @@ function renderScanResults(report, target = "results") {
 			const snippet    = escapeHtml(finding?.code_snippet || "");
 			const ruleId     = escapeHtml(finding?.rule_id || "UNKNOWN");
 
+			const lineDisplay = line
+				? `<span class="line-link" onclick="jumpToLine(${line})" title="Jump to line ${line} in Scanner">${line}</span>`
+				: "—";
+
 			return `
 				<tr>
 					<td><span class="${severityBadgeClass(severity)}">${severity}</span></td>
 					<td>${confidence}</td>
-					<td>${line}</td>
+					<td>${lineDisplay}</td>
 					<td>${ruleId}</td>
 					<td>${issue}</td>
 					<td><pre>${snippet}</pre></td>
