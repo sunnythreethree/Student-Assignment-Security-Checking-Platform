@@ -187,8 +187,8 @@ INFRA_ARGS=(
   --env         "$ENVIRONMENT"
   --region      "$AWS_REGION"
 )
-[[ -n "$VPC_ID" ]]       && INFRA_ARGS+=(--vpc-id "$VPC_ID")
-[[ -n "$SUBNET_IDS" ]]   && INFRA_ARGS+=(--subnets "$SUBNET_IDS")
+[[ -n "$VPC_ID" && "$SKIP_ECS" == "false" ]]     && INFRA_ARGS+=(--vpc-id "$VPC_ID")
+[[ -n "$SUBNET_IDS" && "$SKIP_ECS" == "false" ]] && INFRA_ARGS+=(--subnets "$SUBNET_IDS")
 [[ -n "$SCANNER_IMAGE" ]] && INFRA_ARGS+=(--scanner-image "$SCANNER_IMAGE")
 
 "$SCRIPT_DIR/01_setup_infra.sh" "${INFRA_ARGS[@]}"
