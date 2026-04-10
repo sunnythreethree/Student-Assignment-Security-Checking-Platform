@@ -15,10 +15,10 @@ class S3WriteError(Exception):
 class S3Writer:
     """Save scan reports to S3."""
 
-    def __init__(self, bucket_name, region="us-east-1"):
+    def __init__(self, bucket_name, region=None):
         self.bucket_name = bucket_name
-        self.region = region
-        self.s3_client = boto3.client("s3", region_name=region)
+        self.region = region or os.environ.get("AWS_REGION", "us-east-1")
+        self.s3_client = boto3.client("s3", region_name=self.region)
 
     def write_scan_report(self, scan_id, report_data, student_id):
         """Upload a scan report and return the S3 key."""
@@ -112,7 +112,7 @@ class S3Writer:
         )
 
 
-def write_scan_result_to_s3(bucket_name, scan_id, student_id, report_data, region="us-east-1"):
+def write_scan_result_to_s3(bucket_name, scan_id, student_id, report_data, region=None):
     """Save result to S3 and return key + URL."""
     writer = S3Writer(bucket_name, region)
     s3_key = writer.write_scan_report(scan_id, report_data, student_id)

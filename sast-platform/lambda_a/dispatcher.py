@@ -7,6 +7,7 @@ Called after validation passes.
 """
 
 import json
+import os
 import time
 import uuid
 import logging
@@ -22,7 +23,7 @@ sqs      = boto3.client("sqs")
 dynamodb = boto3.resource("dynamodb")
 s3       = boto3.client("s3")
 
-RATE_LIMIT_PER_HOUR = 10
+RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "10"))
 
 
 def check_rate_limit(student_id: str, table_name: str,

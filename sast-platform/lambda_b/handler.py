@@ -56,7 +56,7 @@ logger.setLevel(logging.INFO)
 # Code size threshold for ECS fallback.
 # Submissions larger than this are offloaded to ECS Fargate instead of
 # being scanned inline, avoiding Lambda timeout/memory limits.
-LAMBDA_CODE_SIZE_LIMIT = 250_000  # ~250 KB
+LAMBDA_CODE_SIZE_LIMIT = int(os.environ.get("LAMBDA_CODE_SIZE_LIMIT", str(250_000)))  # ~250 KB
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
@@ -248,7 +248,8 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
 
         # Step 2: Execute security scan (inline for small submissions)
         logger.info(f"Starting scan - scan_id: {scan_id}")
-        raw_scan_result = scan_code_with_timeout(code, language, scan_id, timeout=300)
+        raw_scan_result = scan_code_with_timeout(code, language, scan_id,
+                                                  timeout=int(os.environ.get("SCAN_TIMEOUT_SECONDS", "300")))
 
         # Step 3: Parse scan results
         logger.info(f"Parsing scan results - scan_id: {scan_id}")
