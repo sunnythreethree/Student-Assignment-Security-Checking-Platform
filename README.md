@@ -253,6 +253,32 @@ make test-no-scan   # skip scanner (no bandit/semgrep needed)
 make test           # unit + integration
 ```
 
+## E2E Scanner Validation (requires live stack)
+
+`test-samples/` contains vulnerable code files in 5 languages and an automated test runner that validates the full scan pipeline against a deployed AWS environment.
+
+**11 test scenarios** — 5 API validation + 6 scanner:
+
+| Type | Tests | What's covered |
+|------|-------|----------------|
+| Lambda A | A1–A5 | Empty code, missing language, unsupported language, oversized payload |
+| Lambda B | B1–B2 | Python: `eval()`, `pickle`, MD5, hardcoded password, SQL injection |
+| Lambda B | B3 | JavaScript: `eval()`, XSS via `document.write`, hardcoded token |
+| Lambda B | B4 | Java: SQL injection, `Runtime.exec()` command injection |
+| Lambda B | B5 | Go: `exec.Command` injection, SQL injection |
+| Lambda B | B6 | Clean Python — 0 findings (false-positive check) |
+
+```bash
+# Run all 11 tests against a deployed stack
+python test-samples/e2e_test.py \
+  --url <LAMBDA_A_FUNCTION_URL> \
+  --student-id <YOUR_STUDENT_ID>
+```
+
+You can also drag-and-drop files from `test-samples/code/` directly into the frontend UI — the language is auto-detected from the file extension.
+
+See [`test-samples/README.md`](sast-platform/test-samples/README.md) for full details.
+
 ---
 
 ## Repository Layout
@@ -292,6 +318,9 @@ sast-platform/
 │   ├── fixtures/           # Sample vulnerable code for demos
 │   ├── load/               # Locust load tests (needs live stack)
 │   └── e2e/                # Full flow (needs live stack)
+├── test-samples/           # E2E scanner validation (needs live stack)
+│   ├── code/               # Vulnerable + clean code in 5 languages
+│   └── e2e_test.py         # Automated test runner (11 scenarios)
 ├── Makefile
 └── pytest.ini
 ```
