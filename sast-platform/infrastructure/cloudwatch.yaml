@@ -224,7 +224,7 @@ Resources:
                 "properties": {
                   "title": "Invocations",
                   "metrics": [["AWS/Lambda","Invocations","FunctionName","${LambdaAFunctionName}",{"stat":"Sum","label":"Total"}]],
-                  "period": 300, "view": "timeSeries", "stacked": false
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries", "stacked": false
                 }
               },
               {
@@ -232,7 +232,7 @@ Resources:
                 "properties": {
                   "title": "Errors",
                   "metrics": [["AWS/Lambda","Errors","FunctionName","${LambdaAFunctionName}",{"stat":"Sum","color":"#d13212"}]],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 3, "label": "Alarm threshold", "color": "#d13212"}]}
                 }
               },
@@ -244,7 +244,7 @@ Resources:
                     ["AWS/Lambda","Duration","FunctionName","${LambdaAFunctionName}",{"stat":"Average","label":"avg"}],
                     ["AWS/Lambda","Duration","FunctionName","${LambdaAFunctionName}",{"stat":"p99","label":"p99"}]
                   ],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 25000, "label": "≥25s alarm", "color": "#ff9900"}]}
                 }
               },
@@ -253,7 +253,7 @@ Resources:
                 "properties": {
                   "title": "Throttles",
                   "metrics": [["AWS/Lambda","Throttles","FunctionName","${LambdaAFunctionName}",{"stat":"Sum","color":"#8c4fff"}]],
-                  "period": 300, "view": "timeSeries"
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries"
                 }
               },
               {
@@ -265,7 +265,7 @@ Resources:
                 "properties": {
                   "title": "Invocations",
                   "metrics": [["AWS/Lambda","Invocations","FunctionName","${LambdaBFunctionName}",{"stat":"Sum","label":"Total"}]],
-                  "period": 300, "view": "timeSeries"
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries"
                 }
               },
               {
@@ -273,7 +273,7 @@ Resources:
                 "properties": {
                   "title": "Errors",
                   "metrics": [["AWS/Lambda","Errors","FunctionName","${LambdaBFunctionName}",{"stat":"Sum","color":"#d13212"}]],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 5, "label": "Alarm threshold", "color": "#d13212"}]}
                 }
               },
@@ -285,7 +285,7 @@ Resources:
                     ["AWS/Lambda","Duration","FunctionName","${LambdaBFunctionName}",{"stat":"Average","label":"avg"}],
                     ["AWS/Lambda","Duration","FunctionName","${LambdaBFunctionName}",{"stat":"p99","label":"p99"}]
                   ],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 800000, "label": "≥13 min alarm", "color": "#ff9900"}]}
                 }
               },
@@ -294,7 +294,7 @@ Resources:
                 "properties": {
                   "title": "Concurrent Executions",
                   "metrics": [["AWS/Lambda","ConcurrentExecutions","FunctionName","${LambdaBFunctionName}",{"stat":"Maximum","color":"#1f77b4"}]],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 50, "label": "Reserved concurrency limit", "color": "#ff9900"}]}
                 }
               },
@@ -310,7 +310,7 @@ Resources:
                     ["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","${ScanQueueName}",{"stat":"Maximum","label":"Visible","color":"#1f77b4"}],
                     ["AWS/SQS","ApproximateNumberOfMessagesNotVisible","QueueName","${ScanQueueName}",{"stat":"Maximum","label":"In-flight","color":"#aec7e8"}]
                   ],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 50, "label": "Alarm (>=50)", "color": "#d13212"}]}
                 }
               },
@@ -322,7 +322,7 @@ Resources:
                     ["AWS/SQS","NumberOfMessagesSent","QueueName","${ScanQueueName}",{"stat":"Sum","label":"Sent","color":"#2ca02c"}],
                     ["AWS/SQS","NumberOfMessagesDeleted","QueueName","${ScanQueueName}",{"stat":"Sum","label":"Processed","color":"#98df8a"}]
                   ],
-                  "period": 300, "view": "timeSeries"
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries"
                 }
               },
               {
@@ -330,7 +330,7 @@ Resources:
                 "properties": {
                   "title": "Dead Letter Queue — should be 0",
                   "metrics": [["AWS/SQS","ApproximateNumberOfMessagesVisible","QueueName","${DLQName}",{"stat":"Sum","color":"#d13212","label":"Dead letters"}]],
-                  "period": 60, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 60, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 1, "label": "Alarm (any message)", "color": "#d13212"}]}
                 }
               },
@@ -347,7 +347,7 @@ Resources:
                     ["AWS/DynamoDB","SuccessfulRequestLatency","TableName","${DynamoDBTableName}","Operation","UpdateItem",{"stat":"Average","label":"UpdateItem"}],
                     ["AWS/DynamoDB","SuccessfulRequestLatency","TableName","${DynamoDBTableName}","Operation","Query",{"stat":"Average","label":"Query"}]
                   ],
-                  "period": 300, "view": "timeSeries"
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries"
                 }
               },
               {
@@ -355,7 +355,7 @@ Resources:
                 "properties": {
                   "title": "Throttled Requests",
                   "metrics": [["AWS/DynamoDB","ThrottledRequests","TableName","${DynamoDBTableName}",{"stat":"Sum","color":"#ff9900"}]],
-                  "period": 300, "view": "timeSeries",
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries",
                   "annotations": {"horizontal": [{"value": 5, "label": "Alarm (>=5)", "color": "#d13212"}]}
                 }
               },
@@ -364,7 +364,7 @@ Resources:
                 "properties": {
                   "title": "System Errors",
                   "metrics": [["AWS/DynamoDB","SystemErrors","TableName","${DynamoDBTableName}",{"stat":"Sum","color":"#d13212"}]],
-                  "period": 300, "view": "timeSeries"
+                  "region": "${AWS::Region}", "period": 300, "view": "timeSeries"
                 }
               }
             ]
