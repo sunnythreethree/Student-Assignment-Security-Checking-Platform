@@ -10,12 +10,11 @@
 #   6. 05_test_api.sh       → End-to-end smoke test (requires --student-key)
 #
 # Usage:
-#   ./deploy.sh --code-bucket <bucket> [OPTIONS]
-#
-# Required:
-#   --code-bucket    S3 bucket for Lambda deployment packages
+#   ./deploy.sh [OPTIONS]
 #
 # Optional:
+#   --code-bucket    S3 bucket for Lambda deployment packages
+#                    (default: sast-deploy-<account-id>, created automatically)
 #   --project        Project name prefix        (default: sast-platform)
 #   --env            Deployment environment      (default: dev)
 #   --region         AWS region                 (default: us-east-1)
@@ -64,15 +63,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Validation ─────────────────────────────────────────────────────────────────
-if [[ -z "$CODE_BUCKET" ]]; then
-  echo "ERROR: --code-bucket is required."
-  echo "       Usage: ./deploy.sh --code-bucket <s3-bucket> [OPTIONS]"
-  exit 1
-fi
-
 if [[ -n "$VPC_ID" && -z "$SUBNET_IDS" ]]; then
   echo "ERROR: --subnets is required when --vpc-id is set."
   exit 1
+fi
+
+# ── Auto-provision code bucket if not specified ────────────────────────────────
+# Default to sast-deploy-<account-id> so the bucket name is globally unique
+# and no manual pre-step is needed on a fresh Learner Lab session.
+if [[ -z "$CODE_BUCKET" ]]; then
+  _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  CODE_BUCKET="sast-deploy-${_ACCOUNT_ID}"
+  echo "[$(date '+%H:%M:%S')] --code-bucket not set, using default: $CODE_BUCKET"
+fi
+
+if ! aws s3api head-bucket --bucket "$CODE_BUCKET" --region "$AWS_REGION" &>/dev/null; then
+  echo "[$(date '+%H:%M:%S')] Bucket '$CODE_BUCKET' not found — creating it..."
+  aws s3api create-bucket --bucket "$CODE_BUCKET" --region "$AWS_REGION" > /dev/null
+  echo "[$(date '+%H:%M:%S')] ✓ Bucket created: s3://$CODE_BUCKET"
 fi
 
 # ── Export env vars consumed by child scripts ─────────────────────────────────
