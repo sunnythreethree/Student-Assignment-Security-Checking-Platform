@@ -46,7 +46,10 @@
         Scanner
       </a>
       <a class="nav-item" data-view="results" onclick="switchView('results')">
-        Results &amp; History
+        Results
+      </a>
+      <a class="nav-item" data-view="history" onclick="switchView('history')">
+        History
       </a>
     </nav>
 
@@ -60,7 +63,16 @@
 
     <!-- Footer -->
     <div class="sidebar-footer">
-      <div class="sidebar-version">CS6620 Group 9 · v1.0</div>
+      <div class="theme-swatches">
+        <button class="theme-swatch active" data-theme="green"  onclick="setTheme('green')"  title="Green"></button>
+        <button class="theme-swatch"        data-theme="pink"   onclick="setTheme('pink')"   title="Pink"></button>
+        <button class="theme-swatch"        data-theme="yellow" onclick="setTheme('yellow')" title="Yellow"></button>
+        <button class="theme-swatch"        data-theme="blue"   onclick="setTheme('blue')"   title="Blue"></button>
+      </div>
+      <button class="btn-dark-mode" id="btn-dark-mode" onclick="toggleDarkMode()" title="Toggle dark mode">
+        <span id="dark-mode-icon">🌙</span>
+        <span id="dark-mode-label">Dark Mode</span>
+      </button>
     </div>
   </aside>
 
@@ -112,24 +124,29 @@
                       placeholder="Paste your code here..." spellcheck="false"></textarea>
           </div>
 
-          <!-- Inline status bar -->
+          <!-- Progress bar -->
+          <div class="scan-progress-wrap hidden" id="scan-progress-wrap">
+            <div class="scan-progress-bar" id="scan-progress-bar"></div>
+          </div>
+
+          <!-- Status block -->
           <div class="status-bar">
             <div id="status-idle" class="status-idle-msg">Ready to scan</div>
 
             <div id="status-running" class="status-running hidden">
               <div class="spinner-sm"></div>
-              <span>Scanning…</span>
+              <span>Scanning in progress…</span>
               <span class="scan-id-inline" id="status-scan-id">—</span>
             </div>
 
             <div id="status-done" class="status-done-msg hidden">
-              <span class="status-ok">✓ Scan complete</span>
+              <span class="status-ok">Scan complete</span>
               <button class="btn-view-results" onclick="switchView('results')">View Results →</button>
             </div>
 
-            <div id="status-failed" class="hidden">
-              <span class="status-err">✗ Scan failed</span>
-              <span id="fail-scan-id" class="scan-id-inline" style="margin-left:8px"></span>
+            <div id="status-failed" class="status-done-msg hidden">
+              <span class="status-err">Scan failed</span>
+              <span id="fail-scan-id" class="scan-id-inline"></span>
             </div>
           </div>
 
@@ -167,26 +184,55 @@
       <!-- Meta bar -->
       <div class="result-meta-bar" id="result-meta-bar"></div>
 
+      <!-- Empty state (shown when no scan loaded) -->
+      <div id="results-empty-state" class="results-empty-state">
+        <svg width="80" height="80" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" opacity=".35">
+          <circle cx="38" cy="37" r="32" stroke="currentColor" stroke-width="3.5"/>
+          <line x1="61" y1="61" x2="82" y2="82" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+          <ellipse cx="38" cy="38" rx="7" ry="9" stroke="currentColor" stroke-width="2"/>
+          <circle cx="38" cy="27" r="3" stroke="currentColor" stroke-width="2"/>
+          <line x1="36.5" y1="24.5" x2="33" y2="19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="39.5" y1="24.5" x2="43" y2="19" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="31" y1="34" x2="24" y2="31" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="31" y1="38" x2="24" y2="38" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="31" y1="42" x2="24" y2="45" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="45" y1="34" x2="52" y2="31" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="45" y1="38" x2="52" y2="38" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="45" y1="42" x2="52" y2="45" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <div class="results-empty-title">No scan loaded yet</div>
+        <div class="results-empty-body">Submit your code in the Scanner and results will appear here.</div>
+        <button class="results-empty-cta" onclick="switchView('scanner')">← Go scan some code</button>
+      </div>
+
       <!-- Findings panel -->
       <div class="panel findings-panel">
         <div class="panel-header">
           <span class="panel-dot green"></span>
           <span class="panel-label">Findings</span>
+          <input type="text" id="findings-search" class="findings-search-input"
+                 placeholder="Search rule, issue…" oninput="filterFindings(this.value)" />
+          <button class="btn-download-md" onclick="downloadAsMarkdown()" id="btn-download-md" disabled title="Load a scan first">
+            ↓ Download
+          </button>
         </div>
         <div id="results"></div>
       </div>
 
-      <!-- History panel -->
-      <div class="panel history-panel" id="history-panel">
+    </section>
+
+    <!-- ── HISTORY VIEW ── -->
+    <section class="view hidden" id="view-history">
+      <div class="panel history-view-panel">
         <div class="panel-header">
           <span class="panel-dot yellow"></span>
           <span class="panel-label">Scan History</span>
+          <button class="history-refresh-btn" onclick="loadHistory()" title="Refresh">↻ Refresh</button>
         </div>
         <div id="history-content">
           <div class="history-empty">Enter your Student ID in the sidebar to load history.</div>
         </div>
       </div>
-
     </section>
 
   </div><!-- /main -->
