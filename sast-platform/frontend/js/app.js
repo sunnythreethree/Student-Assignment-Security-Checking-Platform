@@ -299,6 +299,9 @@ async function handleDone(statusData) {
       return;
     }
     const report = await reportRes.json();
+    // Attach presigned URL metadata so results.js can render the JSON download link.
+    report.report_url            = statusData.report_url;
+    report.report_url_expires_at = statusData.report_url_expires_at;
     renderReport(report);
     progressComplete();
     showDone();
