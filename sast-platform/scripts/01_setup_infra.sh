@@ -98,10 +98,17 @@ deploy_stack() {
   log "Deploying stack: $stack_name"
   log "  Template: $template_file"
 
-  local param_args=()
+  # Build parameters as JSON array (handles commas inside values like SubnetIds lists)
+  local params_json="["
+  local first=true
   for p in "${params[@]}"; do
-    param_args+=(ParameterKey="${p%%=*}",ParameterValue="${p#*=}")
+    local k="${p%%=*}"
+    local v="${p#*=}"
+    $first || params_json+=","
+    params_json+="{\"ParameterKey\":\"$k\",\"ParameterValue\":\"$v\"}"
+    first=false
   done
+  params_json+="]"
 
   # Check if stack already exists
   local stack_status
@@ -116,30 +123,28 @@ deploy_stack() {
       --template-body "file://$template_file" \
       --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
       --region "$AWS_REGION" \
-      $([[ ${#param_args[@]} -gt 0 ]] && echo "--parameters ${param_args[*]}") \
+      --parameters "$params_json" \
       > /dev/null
     aws cloudformation wait stack-create-complete \
       --stack-name "$stack_name" --region "$AWS_REGION"
   else
-    # Update existing stack
-    local update_out
-    if update_out=$(aws cloudformation update-stack \
-      --stack-name "$stack_name" \
-      --template-body "file://$template_file" \
-      --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-      --region "$AWS_REGION" \
-      $([[ ${#param_args[@]} -gt 0 ]] && echo "--parameters ${param_args[*]}") \
-      2>&1); then
+    # If stack is in progress, wait for it to settle first
+    if [[ "$stack_status" == *"IN_PROGRESS"* ]]; then
+      log "  Stack in progress ($stack_status), waiting: $stack_name"
       aws cloudformation wait stack-update-complete \
-        --stack-name "$stack_name" --region "$AWS_REGION"
+        --stack-name "$stack_name" --region "$AWS_REGION" 2>/dev/null || true
+      aws cloudformation wait stack-create-complete \
+        --stack-name "$stack_name" --region "$AWS_REGION" 2>/dev/null || true
+      stack_status=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" --region "$AWS_REGION" \
+        --query "Stacks[0].StackStatus" --output text 2>/dev/null)
+    fi
+
+    # Stack exists — skip update if already in a good terminal state
+    if [[ "$stack_status" == "CREATE_COMPLETE" || "$stack_status" == "UPDATE_COMPLETE" || "$stack_status" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+      log "  Stack already deployed ($stack_status): $stack_name"
     else
-      # No changes = not an error
-      if echo "$update_out" | grep -q "No updates are to be performed"; then
-        log "  No changes to stack: $stack_name"
-      else
-        echo "$update_out" >&2
-        fail "Stack update failed: $stack_name"
-      fi
+      fail "Stack $stack_name is in unexpected state: $stack_status"
     fi
   fi
 
