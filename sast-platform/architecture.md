@@ -7,7 +7,7 @@
 
 ## Overview
 
-A serverless static application security testing (SAST) platform hosted on AWS. Students submit source code via a web UI; the system scans it asynchronously using Bandit and Semgrep, stores the report in S3, and serves results back to the browser via a presigned URL.
+A serverless static application security testing (SAST) platform hosted on AWS. Students submit source code via a web UI; the system scans it asynchronously using Bandit (Python), the instructor-provided Node.js scanner (JavaScript/TypeScript), or Semgrep (Java/Go/Ruby/C/C++), stores the report in S3, and serves results back to the browser via a presigned URL.
 
 ---
 
@@ -135,7 +135,7 @@ Hosted in a public S3 bucket configured as a static website.
 Processing steps per SQS message:
 
 1. Extract `scan_id`, `code`, `language`, `student_id`
-2. Run `scanner.py` — routes to Bandit or Semgrep based on language
+2. Run `scanner.py` — routes to Bandit (Python), teacher_scanner/Node.js (JS/TS), or Semgrep (Java/Go/Ruby/C/C++) based on language
 3. Parse raw tool output via `result_parser.py` into unified schema
 4. Write report JSON to S3 via `s3_writer.py`
 5. Update DynamoDB record to `DONE` (or `FAILED` on error)
@@ -146,8 +146,8 @@ Processing steps per SQS message:
 |----------|------|-------|
 | `python` | Bandit | `bandit -r <file> -f json --silent` |
 | `java` | Semgrep | `semgrep --config=auto --json` |
-| `javascript` | Semgrep | `semgrep --config=auto --json` |
-| `typescript`, `go`, `ruby`, `c`, `cpp` | Semgrep | fallback `--config=auto`; file extension mapping incomplete — see [issue #10](https://github.com/sunnythreethree/Student-Assignment-Security-Checking-Platform/issues/10) |
+| `javascript`, `typescript` | teacher_scanner | Calls instructor-provided `scanner.js` via Node.js subprocess; falls back to Semgrep if `node` not in PATH |
+| `go`, `ruby`, `c`, `cpp` | Semgrep | `semgrep --config=auto --json`; file extension mapping via `ext_map` in `scanner.py` |
 
 **Unified finding schema** (output of `result_parser.py`):
 
