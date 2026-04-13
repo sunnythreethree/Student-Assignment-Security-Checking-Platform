@@ -74,6 +74,7 @@ function switchView(name) {
   const titles = { scanner: "Scanner", results: "Results", history: "History" };
   if (title) title.textContent = titles[name] || name;
 
+  if (name !== "scanner") dismissError();
   if (name === "results" && !_currentReport) setResultsEmptyState(true);
   if (name === "history") loadHistory();
 }
