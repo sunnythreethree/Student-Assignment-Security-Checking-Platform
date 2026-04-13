@@ -70,9 +70,9 @@ class TestSemgrepRouting(unittest.TestCase):
         result, _ = self._scan("java")
         self.assertEqual(result["tool"], "semgrep")
 
-    def test_javascript_routes_to_semgrep(self):
+    def test_javascript_routes_to_teacher_scanner(self):
         result, _ = self._scan("javascript")
-        self.assertEqual(result["tool"], "semgrep")
+        self.assertEqual(result["tool"], "teacher_scanner")
 
     def test_java_file_has_java_extension(self):
         _, mock_run = self._scan("java")
@@ -99,8 +99,13 @@ class TestNewLanguageRouting(unittest.TestCase):
         self.assertTrue(any(arg.endswith(expected_ext) for arg in cmd),
                         f"{language} expected ext {expected_ext}")
 
-    def test_typescript_routes_to_semgrep_with_ts_extension(self):
-        self._assert_semgrep_ext("typescript", ".ts")
+    def test_typescript_routes_to_teacher_scanner_with_ts_extension(self):
+        with patch("scanner.subprocess.run", return_value=_mock_run(stdout="[]")) as mock_run:
+            result = SecurityScanner().scan_code("// code", "typescript", "sid")
+        self.assertEqual(result["tool"], "teacher_scanner", "typescript should route to teacher_scanner")
+        cmd = mock_run.call_args[0][0]
+        self.assertTrue(any(arg.endswith(".ts") for arg in cmd),
+                        "typescript expected ext .ts")
 
     def test_go_routes_to_semgrep_with_go_extension(self):
         self._assert_semgrep_ext("go", ".go")
@@ -115,7 +120,12 @@ class TestNewLanguageRouting(unittest.TestCase):
         self._assert_semgrep_ext("cpp", ".cpp")
 
     def test_typescript_case_insensitive(self):
-        self._assert_semgrep_ext("TypeScript", ".ts")
+        with patch("scanner.subprocess.run", return_value=_mock_run(stdout="[]")) as mock_run:
+            result = SecurityScanner().scan_code("// code", "TypeScript", "sid")
+        self.assertEqual(result["tool"], "teacher_scanner", "TypeScript should route to teacher_scanner")
+        cmd = mock_run.call_args[0][0]
+        self.assertTrue(any(arg.endswith(".ts") for arg in cmd),
+                        "TypeScript expected ext .ts")
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +170,7 @@ class TestSemgrepOutputParsing(unittest.TestCase):
     def test_findings_returned_correctly(self):
         finding = {"check_id": "rule.id", "start": {"line": 5}, "extra": {"message": "bad"}}
         with patch("scanner.subprocess.run", return_value=_mock_run(stdout=_semgrep_stdout([finding]))):
-            result = SecurityScanner().scan_code("// code", "javascript", "sid")
+            result = SecurityScanner().scan_code("// code", "java", "sid")
         self.assertEqual(len(result["findings"]), 1)
         self.assertEqual(result["findings"][0]["check_id"], "rule.id")
 
