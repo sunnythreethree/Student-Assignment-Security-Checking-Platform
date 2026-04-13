@@ -971,6 +971,29 @@ body {
 
 .url-expired { color: var(--red); }
 
+#refresh-url-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 12px;
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+#refresh-url-btn::before { content: "↻"; font-size: 14px; }
+#refresh-url-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), .06);
+}
+#refresh-url-btn:disabled { opacity: .4; cursor: not-allowed; }
+
 /* ── History view ── */
 .history-view-panel {
   flex: 1;
