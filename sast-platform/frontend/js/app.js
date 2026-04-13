@@ -178,8 +178,8 @@ async function handleSubmit() {
 
   dismissError();
 
-  if (!language) { showError("Please select a language."); return; }
-  if (!code)     { showError("Please paste some code to scan."); return; }
+  if (!language) { progressReset(); resetStatus(); showError("Please select a language."); return; }
+  if (!code)     { progressReset(); resetStatus(); showError("Please paste some code to scan."); return; }
 
   setSubmitLoading(true);
   resetStatus();
@@ -689,6 +689,13 @@ function clearCode() {
   document.getElementById("code").value = "";
   updateCodeStats();
   document.getElementById("code").focus();
+
+  if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+  _currentScanId = null;
+  progressReset();
+  resetStatus();
+  setSubmitLoading(false);
+  dismissError();
 }
 
 // ── KPI animation ────────────────────────────────────────────────────────────
@@ -755,6 +762,13 @@ function progressFail() {
     wrap.classList.add("hidden");
     bar.style.width = "0%";
   }, 800);
+}
+
+function progressReset() {
+  if (_progressTimer) { clearTimeout(_progressTimer); _progressTimer = null; }
+  const wrap = document.getElementById("scan-progress-wrap");
+  const bar  = document.getElementById("scan-progress-bar");
+  if (wrap) { wrap.classList.add("hidden"); bar.style.width = "0%"; bar.style.background = "var(--accent)"; }
 }
 
 // ── Dark mode ─────────────────────────────────────────────────────────────────
