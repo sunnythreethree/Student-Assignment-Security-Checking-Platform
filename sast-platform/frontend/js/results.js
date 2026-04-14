@@ -107,7 +107,9 @@ function renderScanResults(report, target = "results") {
 	const summary   = normalizeSummary(report?.summary || {});
 	const vulnCount = Number(report?.vuln_count ?? findings.length);
 	const scanId    = escapeHtml(report?.scan_id || "-");
-	const tool      = escapeHtml(report?.tool || "-");
+	const TOOL_DISPLAY_NAMES = { teacher_scanner: "JS/TS" };
+	const rawTool   = report?.tool || "-";
+	const tool      = escapeHtml(TOOL_DISPLAY_NAMES[rawTool] || rawTool);
 	const language  = escapeHtml(report?.language || "-");
 
 	const rows = findings
