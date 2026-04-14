@@ -1,6 +1,7 @@
 """
 Lambda B Main Handler
 Responsibilities:
+
 1. Extract scan task information from SQS messages
 2. Call scanning engine for code security analysis
 
