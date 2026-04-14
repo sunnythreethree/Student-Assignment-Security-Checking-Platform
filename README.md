@@ -36,7 +36,7 @@ Browser
   │                                                             ┌──────┴──────┐
   │                                                          S3 upload     SQS Queue
   │                                                         (code blob)        │
-  │                                                                             ▼
+  │                                                                            ▼
   │                                                                        Lambda B
   │                                                                        scanner.py / scanner.js
   │                                                                             │
