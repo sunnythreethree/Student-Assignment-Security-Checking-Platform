@@ -610,6 +610,41 @@ function downloadAsMarkdown() {
   URL.revokeObjectURL(url);
 }
 
+function downloadAsJSON() {
+  if (!_currentReport?.report_url) return;
+  const a = document.createElement("a");
+  a.href = _currentReport.report_url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.click();
+}
+
+function toggleDownloadDropdown() {
+  const dd  = document.getElementById("download-dropdown");
+  const btn = document.getElementById("btn-download-md");
+  if (!dd || !btn) return;
+  if (dd.classList.contains("open")) {
+    dd.classList.remove("open");
+    return;
+  }
+  // Use fixed positioning to escape overflow:hidden on .panel
+  const rect = btn.getBoundingClientRect();
+  dd.style.top   = (rect.bottom + 4) + "px";
+  dd.style.right = (window.innerWidth - rect.right) + "px";
+  dd.classList.add("open");
+}
+
+function closeDownloadDropdown() {
+  const dd = document.getElementById("download-dropdown");
+  if (dd) dd.classList.remove("open");
+}
+
+// Close dropdown when clicking outside
+document.addEventListener("click", (e) => {
+  const wrap = document.getElementById("download-dropdown-wrap");
+  if (wrap && !wrap.contains(e.target)) closeDownloadDropdown();
+});
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 function setSubmitLoading(loading) {

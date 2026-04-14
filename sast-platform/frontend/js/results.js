@@ -32,38 +32,26 @@ function normalizeSummary(summary) {
  * the 1-hour presigned URL TTL.
  */
 function buildDownloadSection(report) {
-	if (!report?.report_url) return "";
+	if (!report?.report_url_expires_at) return "";
 
 	const expiresAt = report.report_url_expires_at;
 	const scanId    = report.scan_id;
 
-	let expiryHtml = "";
+	const expiresDate  = new Date(expiresAt);
+	const expiresLocal = expiresDate.toLocaleString();
+	const isExpired    = Date.now() >= expiresDate.getTime();
+
+	const expiryHtml = isExpired
+		? `<p class="url-expired">Download link has expired. Click "Refresh link" to get a new one.</p>`
+		: `<p class="url-expiry">Download link expires at: <strong>${escapeHtml(expiresLocal)}</strong></p>`;
+
 	let refreshHtml = "";
-
-	if (expiresAt) {
-		const expiresDate  = new Date(expiresAt);
-		const expiresLocal = expiresDate.toLocaleString();
-		const isExpired    = Date.now() >= expiresDate.getTime();
-
-		if (isExpired) {
-			expiryHtml = `<p class="url-expired">Download link has expired. Click "Refresh link" to get a new one.</p>`;
-		} else {
-			expiryHtml = `<p class="url-expiry">Download link expires at: <strong>${escapeHtml(expiresLocal)}</strong></p>`;
-		}
-
-		// Show refresh button if pollStatus is available (loaded from app.js).
-		// Auth is handled via X-Student-Key header inside window.pollStatus —
-		// student_id is not needed here.
-		if (scanId && typeof window.pollStatus === "function") {
-			refreshHtml = `<button id="refresh-url-btn" type="button">Refresh link</button>`;
-		}
+	if (scanId && typeof window.pollStatus === "function") {
+		refreshHtml = `<button id="refresh-url-btn" type="button">Refresh link</button>`;
 	}
 
 	return `
 		<section class="result-download">
-			<a href="${escapeHtml(report.report_url)}" target="_blank" rel="noopener noreferrer" id="download-link">
-				Download full report (JSON)
-			</a>
 			${expiryHtml}
 			${refreshHtml}
 		</section>
