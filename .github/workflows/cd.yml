@@ -45,6 +45,7 @@ jobs:
               - 'sast-platform/lambda_a/**'
             lambda_b:
               - 'sast-platform/lambda_b/**'
+              - 'sast-platform/scripts/04_build_ecs_image.sh'
             frontend:
               - 'sast-platform/frontend/**'
             infra:
