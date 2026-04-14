@@ -370,6 +370,6 @@ LAMBDA_URL=<url> STUDENT_KEY=<key> ./scripts/05_test_api.sh
 
 | Member | GitHub | Responsibilities |
 |--------|--------|-----------------|
-| Jingsi Zhang | @tyrahappy | Lambda A, auth, dispatcher, infra scripts, CI/CD pipeline, tests |
-| Mengshan Li | @sunnythreethrees | Frontend, S3 infra, upload script |
+| Jingsi Zhang | @tyrahappy | Lambda A, auth, dispatcher, infra scripts, CI/CD pipeline|
+| Mengshan Li | @sunnythreethrees | Frontend, S3 infra, upload script, tests |
 | Jiahua Wu | @beibei-ui | Lambda B, scanner, ECS Fargate, CloudWatch |
