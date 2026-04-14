@@ -106,6 +106,9 @@ jobs:
           mkdir -p /tmp/lambda_b_build
           cp sast-platform/lambda_b/*.py /tmp/lambda_b_build/
           cp sast-platform/lambda_b/requirements.txt /tmp/lambda_b_build/
+          cp sast-platform/lambda_b/scanner.js      /tmp/lambda_b_build/ 2>/dev/null || true
+          cp sast-platform/lambda_b/run_scanner.mjs /tmp/lambda_b_build/ 2>/dev/null || true
+          cp sast-platform/lambda_b/package.json    /tmp/lambda_b_build/ 2>/dev/null || true
           rm -f /tmp/lambda_b_build/ecs_handler.py
           python3 -m pip install --target /tmp/lambda_b_build \
             -r /tmp/lambda_b_build/requirements.txt --quiet --upgrade
