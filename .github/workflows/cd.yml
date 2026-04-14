@@ -59,7 +59,6 @@ jobs:
       PROJECT_NAME: sast-platform
       ENVIRONMENT: dev
       AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-      CODE_BUCKET: ${{ secrets.CODE_BUCKET }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,6 +72,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Resolve code bucket
+        run: |
+          BUCKET="${{ secrets.CODE_BUCKET }}"
+          if [[ -z "$BUCKET" ]]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            BUCKET="sast-deploy-${ACCOUNT_ID}"
+            echo "CODE_BUCKET auto-set to: $BUCKET"
+          fi
+          echo "CODE_BUCKET=${BUCKET}" >> $GITHUB_ENV
 
       # CloudFormation Lambda stacks need the zips to already exist in S3.
       # Create the bucket here if this is a brand-new Learner Lab account.
@@ -146,7 +155,6 @@ jobs:
       PROJECT_NAME: sast-platform
       ENVIRONMENT: dev
       AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-      CODE_BUCKET: ${{ secrets.CODE_BUCKET }}
     steps:
       - uses: actions/checkout@v4
 
@@ -160,6 +168,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Resolve code bucket
+        run: |
+          BUCKET="${{ secrets.CODE_BUCKET }}"
+          if [[ -z "$BUCKET" ]]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            BUCKET="sast-deploy-${ACCOUNT_ID}"
+          fi
+          echo "CODE_BUCKET=${BUCKET}" >> $GITHUB_ENV
 
       - name: Deploy Lambda A
         run: |
@@ -184,7 +201,6 @@ jobs:
       PROJECT_NAME: sast-platform
       ENVIRONMENT: dev
       AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
-      CODE_BUCKET: ${{ secrets.CODE_BUCKET }}
       SKIP_TEST: "true"
     steps:
       - uses: actions/checkout@v4
@@ -199,6 +215,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Resolve code bucket
+        run: |
+          BUCKET="${{ secrets.CODE_BUCKET }}"
+          if [[ -z "$BUCKET" ]]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            BUCKET="sast-deploy-${ACCOUNT_ID}"
+          fi
+          echo "CODE_BUCKET=${BUCKET}" >> $GITHUB_ENV
 
       - name: Deploy Lambda B
         run: |
