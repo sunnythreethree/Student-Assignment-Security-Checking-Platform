@@ -355,10 +355,9 @@ cd sast-platform
 
 | File | Language | Expected findings |
 |------|----------|-------------------|
-| `vulnerable_python.py` | python | B602 HIGH (shell injection), B307 HIGH (eval), B301 MEDIUM (pickle), B105 LOW (hardcoded password) |
-| `vulnerable_javascript.js` | javascript | eval injection, SQL injection (template literal), hardcoded credential |
+| `vulnerable_javascript.js` | javascript | HARDCODED_SECRET HIGH (Stripe secret key, hardcoded password, AWS Access Key ID), NOSQL_INJECTION HIGH (MongoDB find/findOne/deleteOne), INSECURE_FUNCTION HIGH (eval) |
 
-Submit either file through the UI or run the smoke test:
+Submit the file through the UI or run the smoke test:
 
 ```bash
 LAMBDA_URL=<url> STUDENT_KEY=<key> ./scripts/05_test_api.sh
