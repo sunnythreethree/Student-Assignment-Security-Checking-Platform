@@ -185,8 +185,8 @@ sast-platform/
 │   └── requirements.txt
 ├── lambda_b/               # Scan engine
 │   ├── handler.py          # SQS consumer, atomic IN_PROGRESS claim
-│   ├── scanner.py          # Bandit runner (Python)
-│   ├── scanner.js          # Semgrep runner (JS/TS/Java/Go/Ruby)
+│   ├── scanner.py          # Multi-language scanner orchestrator (routes to Bandit / teacher_scanner / Semgrep)
+│   ├── scanner.js          # Teacher-provided JavaScript/TypeScript vulnerability scanner
 │   ├── result_parser.py    # Normalise raw tool output
 │   ├── s3_writer.py        # Write report + generate presigned URL
 │   ├── ecs_handler.py      # ECS Fargate fallback for large submissions
@@ -370,5 +370,5 @@ LAMBDA_URL=<url> STUDENT_KEY=<key> ./scripts/05_test_api.sh
 | Member | GitHub | Responsibilities |
 |--------|--------|-----------------|
 | Jingsi Zhang | @tyrahappy | Lambda A, auth, dispatcher, infra scripts, CI/CD pipeline|
-| Mengshan Li | @sunnythreethrees | Frontend, S3 infra, upload script, tests |
+| Mengshan Li | @sunnythreethree | Frontend, S3 infra, upload script, tests |
 | Jiahua Wu | @beibei-ui | Lambda B, scanner, ECS Fargate, CloudWatch |
