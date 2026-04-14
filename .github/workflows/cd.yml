@@ -1,0 +1,269 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── 1. Unit tests (same as CI) ─────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -r sast-platform/requirements-ci.txt
+
+      - name: Run unit tests
+        run: |
+          cd sast-platform
+          python -m pytest tests/unit/ -v --tb=short
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: testing
+          AWS_SECRET_ACCESS_KEY: testing
+
+  # ── 2. Detect which parts of the repo changed ──────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lambda_a: ${{ steps.filter.outputs.lambda_a }}
+      lambda_b: ${{ steps.filter.outputs.lambda_b }}
+      frontend:  ${{ steps.filter.outputs.frontend }}
+      infra:     ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            lambda_a:
+              - 'sast-platform/lambda_a/**'
+            lambda_b:
+              - 'sast-platform/lambda_b/**'
+            frontend:
+              - 'sast-platform/frontend/**'
+            infra:
+              - 'sast-platform/infrastructure/**'
+
+  # ── 3. CloudFormation stacks (only when infrastructure yaml files change) ──
+  deploy-infra:
+    needs: [test, changes]
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: sast-platform
+      ENVIRONMENT: dev
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      CODE_BUCKET: ${{ secrets.CODE_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      # CloudFormation Lambda stacks need the zips to already exist in S3.
+      # Create the bucket here if this is a brand-new Learner Lab account.
+      - name: Ensure code bucket exists
+        run: |
+          if ! aws s3api head-bucket --bucket "$CODE_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
+            echo "Creating bucket: $CODE_BUCKET"
+            aws s3api create-bucket --bucket "$CODE_BUCKET" --region "$AWS_REGION"
+          fi
+
+      - name: Pre-package Lambda A → S3
+        run: |
+          mkdir -p /tmp/lambda_a_build
+          cp sast-platform/lambda_a/*.py /tmp/lambda_a_build/
+          find /tmp/lambda_a_build -name "*.pyc" -delete 2>/dev/null || true
+          (cd /tmp/lambda_a_build && zip -qr /tmp/lambda_a.zip .)
+          aws s3 cp /tmp/lambda_a.zip s3://$CODE_BUCKET/lambda_a.zip --region "$AWS_REGION"
+
+      - name: Pre-package Lambda B → S3
+        run: |
+          mkdir -p /tmp/lambda_b_build
+          cp sast-platform/lambda_b/*.py /tmp/lambda_b_build/
+          cp sast-platform/lambda_b/requirements.txt /tmp/lambda_b_build/
+          rm -f /tmp/lambda_b_build/ecs_handler.py
+          python3 -m pip install --target /tmp/lambda_b_build \
+            -r /tmp/lambda_b_build/requirements.txt --quiet --upgrade
+          find /tmp/lambda_b_build -name "*.pyc" -type f -delete 2>/dev/null || true
+          find /tmp/lambda_b_build -type d -name "__pycache__"  -exec rm -rf {} + 2>/dev/null || true
+          find /tmp/lambda_b_build -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          (cd /tmp/lambda_b_build && zip -qr /tmp/lambda_b.zip .)
+          aws s3 cp /tmp/lambda_b.zip s3://$CODE_BUCKET/lambda_b.zip --region "$AWS_REGION"
+
+      - name: Deploy CloudFormation stacks
+        run: |
+          chmod +x sast-platform/scripts/01_setup_infra.sh
+
+          # Auto-detect default VPC and subnets (same logic as deploy.sh)
+          VPC_ID=$(aws ec2 describe-vpcs --region "$AWS_REGION" \
+            --filters "Name=isDefault,Values=true" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || true)
+          [[ "$VPC_ID" == "None" ]] && VPC_ID=""
+
+          if [[ -n "$VPC_ID" ]]; then
+            SUBNET_IDS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
+              --filters "Name=vpc-id,Values=$VPC_ID" "Name=defaultForAz,Values=true" \
+              --query "Subnets[:2].SubnetId" --output text 2>/dev/null \
+              | tr '[:space:]' ',' | sed 's/,$//' || true)
+          fi
+
+          INFRA_ARGS=(
+            --code-bucket "$CODE_BUCKET"
+            --project     "$PROJECT_NAME"
+            --env         "$ENVIRONMENT"
+            --region      "$AWS_REGION"
+          )
+          [[ -n "$VPC_ID"     ]] && INFRA_ARGS+=(--vpc-id  "$VPC_ID")
+          [[ -n "$SUBNET_IDS" ]] && INFRA_ARGS+=(--subnets "$SUBNET_IDS")
+
+          sast-platform/scripts/01_setup_infra.sh "${INFRA_ARGS[@]}"
+
+  # ── 4. Lambda A code update ────────────────────────────────────────────────
+  deploy-lambda-a:
+    needs: [test, changes, deploy-infra]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      needs.changes.outputs.lambda_a == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: sast-platform
+      ENVIRONMENT: dev
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      CODE_BUCKET: ${{ secrets.CODE_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Deploy Lambda A
+        run: |
+          chmod +x sast-platform/scripts/02_deploy_lambda_a.sh
+          sast-platform/scripts/02_deploy_lambda_a.sh \
+            --code-bucket "$CODE_BUCKET" \
+            --project     "$PROJECT_NAME" \
+            --env         "$ENVIRONMENT" \
+            --region      "$AWS_REGION" \
+            --skip-test
+
+  # ── 5. Lambda B code update ────────────────────────────────────────────────
+  deploy-lambda-b:
+    needs: [test, changes, deploy-infra]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      needs.changes.outputs.lambda_b == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: sast-platform
+      ENVIRONMENT: dev
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      CODE_BUCKET: ${{ secrets.CODE_BUCKET }}
+      SKIP_TEST: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Deploy Lambda B
+        run: |
+          chmod +x sast-platform/scripts/03_deploy_lambda_b.sh
+          sast-platform/scripts/03_deploy_lambda_b.sh
+
+  # ── 6. ECS Docker image rebuild (lambda_b contains the container code) ─────
+  build-ecs:
+    needs: [test, changes, deploy-infra]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      needs.changes.outputs.lambda_b == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: sast-platform
+      ENVIRONMENT: dev
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      SKIP_TEST: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ECS scanner image
+        run: |
+          chmod +x sast-platform/scripts/04_build_ecs_image.sh
+          sast-platform/scripts/04_build_ecs_image.sh
+
+  # ── 7. Frontend upload ─────────────────────────────────────────────────────
+  deploy-frontend:
+    needs: [test, changes, deploy-infra]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      needs.changes.outputs.frontend == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: sast-platform
+      ENVIRONMENT: dev
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Upload frontend to S3
+        run: |
+          chmod +x sast-platform/scripts/04_upload_frontend.sh
+          sast-platform/scripts/04_upload_frontend.sh \
+            --project "$PROJECT_NAME" \
+            --env     "$ENVIRONMENT" \
+            --region  "$AWS_REGION"
