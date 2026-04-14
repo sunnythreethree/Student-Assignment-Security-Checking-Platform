@@ -32,10 +32,6 @@ const EXT_TO_LANGUAGE = {
   ts:   "typescript",
   go:   "go",
   rb:   "ruby",
-  c:    "c",
-  cpp:  "cpp",
-  cc:   "cpp",
-  cxx:  "cpp",
 };
 
 let _currentScanId   = null;
