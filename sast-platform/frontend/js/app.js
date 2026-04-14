@@ -765,7 +765,7 @@ function progressReset() {
   if (_progressTimer) { clearTimeout(_progressTimer); _progressTimer = null; }
   const wrap = document.getElementById("scan-progress-wrap");
   const bar  = document.getElementById("scan-progress-bar");
-  if (wrap) { wrap.classList.add("hidden"); bar.style.width = "0%"; bar.style.background = "var(--accent)"; }
+  if (wrap && bar) { wrap.classList.add("hidden"); bar.style.width = "0%"; bar.style.background = "var(--accent)"; }
 }
 
 // ── Dark mode ─────────────────────────────────────────────────────────────────
