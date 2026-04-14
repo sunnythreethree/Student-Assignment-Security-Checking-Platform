@@ -113,12 +113,6 @@ class TestNewLanguageRouting(unittest.TestCase):
     def test_ruby_routes_to_semgrep_with_rb_extension(self):
         self._assert_semgrep_ext("ruby", ".rb")
 
-    def test_c_routes_to_semgrep_with_c_extension(self):
-        self._assert_semgrep_ext("c", ".c")
-
-    def test_cpp_routes_to_semgrep_with_cpp_extension(self):
-        self._assert_semgrep_ext("cpp", ".cpp")
-
     def test_typescript_case_insensitive(self):
         with patch("scanner.subprocess.run", return_value=_mock_run(stdout="[]")) as mock_run:
             result = SecurityScanner().scan_code("// code", "TypeScript", "sid")

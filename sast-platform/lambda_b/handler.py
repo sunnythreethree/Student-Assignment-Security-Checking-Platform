@@ -209,7 +209,7 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
         # Route to ECS Fargate only when ECS is configured (VPC deployment).
         # When ECS is not configured, semgrep runs directly inside Lambda
         # (semgrep is bundled in requirements.txt and invoked via python -m semgrep).
-        SEMGREP_LANGUAGES = {'java', 'javascript', 'js', 'typescript', 'go', 'ruby', 'c', 'cpp'}
+        SEMGREP_LANGUAGES = {'java', 'javascript', 'js', 'typescript', 'go', 'ruby'}
         ecs_configured = bool(
             os.environ.get('ECS_CLUSTER_NAME', '').strip() and
             os.environ.get('ECS_TASK_DEFINITION', '').strip()

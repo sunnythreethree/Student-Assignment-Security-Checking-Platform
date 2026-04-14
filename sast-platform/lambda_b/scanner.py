@@ -58,7 +58,7 @@ class SecurityScanner:
                 elif language.lower() in ['javascript', 'js', 'typescript']:
                     # Use teacher's Node.js scanner for JS/TS (as required by course)
                     return self._scan_with_teacher_scanner(code, language, scan_id, timeout)
-                elif language.lower() in ['java', 'go', 'ruby', 'c', 'cpp']:
+                elif language.lower() in ['java', 'go', 'ruby']:
                     return self._scan_with_semgrep(code, language, scan_id, timeout)
                 else:
                     raise ValueError(f"Unsupported language type: {language}")
