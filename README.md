@@ -2,7 +2,7 @@
 
 **CS6620 Group 9** | Jingsi (Jess) Zhang · Mengshan (Sunny) Li · Jiahua (Liz) Wu
 
-A serverless static analysis platform on AWS. Students submit source code via a web UI; the system scans it asynchronously using Bandit (Python) and Semgrep (Java / JavaScript / TypeScript / Go / Ruby), stores the report in S3, and returns a presigned download URL to the browser.
+A serverless static analysis platform on AWS. Students submit source code via a web UI; the system scans it asynchronously using Bandit (Python), a custom scanner (JavaScript / TypeScript), and Semgrep (Java / Go / Ruby), stores the report in S3, and returns a presigned download URL to the browser.
 
 ---
 
