@@ -761,6 +761,8 @@ function updateCodeStats() {
   if (!code) {
     stats.textContent = "";
     clearBtn?.classList.remove("visible");
+    const langSelect = document.getElementById("language");
+    if (langSelect) langSelect.value = "";
     return;
   }
 
