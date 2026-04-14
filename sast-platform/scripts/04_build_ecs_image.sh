@@ -223,6 +223,41 @@ update_ecs_task_definition() {
     echo -e "${GREEN}ECS task definition updated → ${ECR_URI}:${IMAGE_TAG}${NC}"
 }
 
+# After updating the ECS stack (which creates a new task definition revision),
+# point Lambda B to the task definition FAMILY NAME instead of a specific revision ARN.
+# Using the family name means ECS always picks the latest active revision automatically,
+# so future image rebuilds take effect without needing to redeploy Lambda B.
+update_lambda_b_task_def_env() {
+    local lambda_func="${PROJECT_NAME}-${ENVIRONMENT}-scanner"
+    local task_def_family="${PROJECT_NAME}-${ENVIRONMENT}-scanner"
+
+    echo -e "${YELLOW}Updating Lambda B ECS_TASK_DEFINITION → family name...${NC}"
+
+    # Fetch all current env vars so we don't clobber them
+    local current_env
+    current_env=$(aws lambda get-function-configuration \
+        --function-name "$lambda_func" \
+        --region "$AWS_REGION" \
+        --query 'Environment.Variables' \
+        --output json 2>/dev/null || echo '{}')
+
+    # Merge: replace only ECS_TASK_DEFINITION
+    local new_env
+    new_env=$(python3 -c "
+import json, sys
+env = json.loads('''$current_env''')
+env['ECS_TASK_DEFINITION'] = '$task_def_family'
+print(json.dumps({'Variables': env}))
+")
+
+    aws lambda update-function-configuration \
+        --function-name "$lambda_func" \
+        --region "$AWS_REGION" \
+        --environment "$new_env" > /dev/null
+
+    echo -e "${GREEN}Lambda B ECS_TASK_DEFINITION = $task_def_family (always latest revision)${NC}"
+}
+
 show_deployment_info() {
     echo
     echo -e "${GREEN}=== Image Info ===${NC}"
@@ -247,6 +282,7 @@ main() {
 
     push_docker_image
     update_ecs_task_definition
+    update_lambda_b_task_def_env
     cleanup_local_images
     show_deployment_info
 
