@@ -156,31 +156,19 @@ make test           # unit + integration
 
 ---
 
-## E2E Scanner Validation (requires live stack)
+## Unit Tests
 
-`test-samples/` contains vulnerable code files in 5 languages and an automated test runner that validates the full scan pipeline against the deployed AWS environment.
+~105 tests across 7 modules, all mocked with [moto](https://github.com/getmoto/moto) — no AWS account needed.
 
-**11 test scenarios** — 5 API validation + 6 scanner:
-
-| Type | Tests | What's covered |
+| File | Tests | What's covered |
 |------|-------|----------------|
-| Lambda A | A1–A5 | Empty code, missing language, unsupported language, oversized payload |
-| Lambda B | B1–B2 | Python: `eval()`, `pickle`, MD5, hardcoded password, SQL injection |
-| Lambda B | B3 | JavaScript: `eval()`, XSS via `document.write`, hardcoded token |
-| Lambda B | B4 | Java: SQL injection, `Runtime.exec()` command injection |
-| Lambda B | B5 | Go: `exec.Command` injection, SQL injection |
-| Lambda B | B6 | Clean Python — 0 findings (false-positive check) |
-
-```bash
-# Run all 11 tests against the deployed stack
-python test-samples/e2e_test.py \
-  --url <LAMBDA_A_FUNCTION_URL> \
-  --student-id <YOUR_STUDENT_ID>
-```
-
-You can also drag-and-drop files from `test-samples/code/` directly into the frontend UI — the language is auto-detected from the file extension.
-
-See [`test-samples/README.md`](sast-platform/test-samples/README.md) for full details.
+| `test_validator.py` | 23 | Input validation: language field, code field, size limit (1 MB), normalization |
+| `test_scanner.py` | 23 | Scanner routing (Python→Bandit, JS→teacher scanner, Java/Go/Ruby→Semgrep), exit codes, timeout, temp file cleanup |
+| `test_dispatcher.py` | 17 | Scan ID generation, DynamoDB record creation, SQS message content |
+| `test_status.py` | 17 | Status response shape for all states: PENDING, IN_PROGRESS, ECS_QUEUED, DONE, FAILED |
+| `test_lambda_b_idempotency.py` | 10 | Lambda B atomic claim — prevents duplicate processing of the same SQS message |
+| `test_history.py` | 10 | Scan history: ordering (newest first), field shapes, student isolation, 50-item limit |
+| `test_result_parser.py` | 5 | Bandit / Semgrep output parsing and field normalization |
 
 ---
 
