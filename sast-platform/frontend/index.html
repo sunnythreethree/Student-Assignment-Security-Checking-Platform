@@ -221,9 +221,15 @@
           <span class="panel-label">Findings</span>
           <input type="text" id="findings-search" class="findings-search-input"
                  placeholder="Search rule, issue…" oninput="filterFindings(this.value)" />
-          <button class="btn-download-md" onclick="downloadAsMarkdown()" id="btn-download-md" disabled title="Load a scan first">
-            ↓ Download
-          </button>
+          <div class="download-dropdown-wrap" id="download-dropdown-wrap">
+            <button class="btn-download-md" onclick="toggleDownloadDropdown()" id="btn-download-md" disabled title="Load a scan first">
+              ↓ Download
+            </button>
+            <div class="download-dropdown" id="download-dropdown">
+              <button class="download-option" onclick="downloadAsMarkdown(); closeDownloadDropdown()">Markdown (.md)</button>
+              <button class="download-option" onclick="downloadAsJSON(); closeDownloadDropdown()">JSON report</button>
+            </div>
+          </div>
         </div>
         <div class="findings-filter-bar">
           <button class="sev-chip active" data-sev="all"    onclick="filterBySeverity('all')">All</button>
