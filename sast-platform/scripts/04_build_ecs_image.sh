@@ -124,13 +124,15 @@ build_docker_image() {
 
     cd "$LAMBDA_B_DIR"
 
-    docker build \
+    docker buildx build \
+        --platform linux/amd64 \
         --tag "$ECR_REPOSITORY_NAME:$IMAGE_TAG" \
         --tag "$ECR_URI:$IMAGE_TAG" \
         --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
         --build-arg VERSION="$IMAGE_TAG" \
         --build-arg PROJECT_NAME="$PROJECT_NAME" \
         --build-arg ENVIRONMENT="$ENVIRONMENT" \
+        --load \
         .
 
     echo -e "${GREEN}Docker image built${NC}"

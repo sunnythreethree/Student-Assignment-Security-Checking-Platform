@@ -226,7 +226,7 @@ class SecurityScanner:
         try:
             # Run Semgrep using locally-bundled rules (see _SEMGREP_CONFIG above)
             cmd = [
-                sys.executable, '-m', 'semgrep',
+                'semgrep',
                 f'--config={_SEMGREP_CONFIG}',
                 '--json',          # JSON output
                 '--quiet',         # Reduce output noise
