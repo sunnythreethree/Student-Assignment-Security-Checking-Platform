@@ -236,17 +236,11 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
         logger.info(f"Fetching code from S3 - scan_id: {scan_id}, key: {s3_code_key}")
         code = _fetch_code_from_s3(s3_bucket_name, s3_code_key)
 
-        # Route large Python submissions to ECS to avoid Lambda timeout/OOM.
+        # Route oversized submissions to ECS to avoid Lambda timeout/OOM.
+        # Non-Python language routing was already handled above (ECS only when configured).
         code_bytes = len(code.encode('utf-8'))
-        semgrep_languages = {'java', 'javascript', 'typescript', 'go', 'ruby', 'c', 'cpp'}
-        needs_ecs = (code_bytes > LAMBDA_CODE_SIZE_LIMIT) or (language.lower() in semgrep_languages)
-        if needs_ecs:
-            reason = (
-                f"code size {code_bytes} bytes exceeds {LAMBDA_CODE_SIZE_LIMIT} limit"
-                if code_bytes > LAMBDA_CODE_SIZE_LIMIT
-                else f"language '{language}' requires Semgrep (not available in Lambda)"
-            )
-            logger.info(f"Routing to ECS Fargate ({reason}) - scan_id: {scan_id}")
+        if code_bytes > LAMBDA_CODE_SIZE_LIMIT and ecs_configured:
+            logger.info(f"Routing to ECS Fargate (code size {code_bytes} bytes exceeds {LAMBDA_CODE_SIZE_LIMIT} limit) - scan_id: {scan_id}")
             update_scan_status(table, student_id, scan_id, 'ECS_QUEUED')
             ecs_result = handle_ecs_fallback(scan_id, language, student_id, s3_code_key)
             if not ecs_result['success']:
