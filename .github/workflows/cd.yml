@@ -3,6 +3,14 @@ name: CD
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Deploy all components (bypass path filter)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
 
 jobs:
   # ── 1. Unit tests (same as CI) ─────────────────────────────────────────────
@@ -31,10 +39,10 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      lambda_a: ${{ steps.filter.outputs.lambda_a }}
-      lambda_b: ${{ steps.filter.outputs.lambda_b }}
-      frontend:  ${{ steps.filter.outputs.frontend }}
-      infra:     ${{ steps.filter.outputs.infra }}
+      lambda_a: ${{ steps.final.outputs.lambda_a }}
+      lambda_b: ${{ steps.final.outputs.lambda_b }}
+      frontend:  ${{ steps.final.outputs.frontend }}
+      infra:     ${{ steps.final.outputs.infra }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -51,6 +59,20 @@ jobs:
             infra:
               - 'sast-platform/infrastructure/**'
               - 'sast-platform/scripts/01_setup_infra.sh'
+      - name: Override outputs for manual trigger
+        id: final
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.force_all }}" == "true" ]]; then
+            echo "lambda_a=true" >> $GITHUB_OUTPUT
+            echo "lambda_b=true" >> $GITHUB_OUTPUT
+            echo "frontend=true" >> $GITHUB_OUTPUT
+            echo "infra=true"    >> $GITHUB_OUTPUT
+          else
+            echo "lambda_a=${{ steps.filter.outputs.lambda_a }}" >> $GITHUB_OUTPUT
+            echo "lambda_b=${{ steps.filter.outputs.lambda_b }}" >> $GITHUB_OUTPUT
+            echo "frontend=${{ steps.filter.outputs.frontend }}"  >> $GITHUB_OUTPUT
+            echo "infra=${{ steps.filter.outputs.infra }}"        >> $GITHUB_OUTPUT
+          fi
 
   # ── 3. CloudFormation stacks (only when infrastructure yaml files change) ──
   deploy-infra:
