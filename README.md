@@ -31,7 +31,7 @@ Browser
   │
   ├─ POST /scan ──────────────────────────────────────────────►  Lambda A
   │                                                               (Function URL)
-  │                                                               validate → dispatcher
+  │                                                     validate → dispatcher
   │                                                                    │
   │                                                             ┌──────┴──────┐
   │                                                          S3 upload     SQS Queue
@@ -71,7 +71,7 @@ Large submissions are routed to ECS Fargate (`ECS_QUEUED`) instead of running in
 
 ## Supported Languages
 
-`python` · `java` · `javascript` · `typescript` · `go` · `ruby` · `c` · `cpp`
+`python` · `java` · `javascript` · `typescript` · `go` · `ruby` 
 
 ---
 
