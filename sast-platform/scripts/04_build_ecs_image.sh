@@ -276,6 +276,18 @@ update_lambda_b_task_def_env() {
         --output text 2>/dev/null || true)
     echo "Security group: $sg_id"
 
+    # --- Get correct S3 report bucket name from the S3 CloudFormation stack ---
+    # Lambda B's S3_BUCKET_NAME may have been set without the account-ID suffix
+    # when the stack was first deployed (if _ACCOUNT_ID was empty at that time).
+    # Always read the authoritative value from the S3 stack output.
+    local s3_stack="${PROJECT_NAME}-s3"
+    local report_bucket
+    report_bucket=$(aws cloudformation describe-stacks \
+        --stack-name "$s3_stack" --region "$AWS_REGION" \
+        --query "Stacks[0].Outputs[?OutputKey=='ReportBucketNameOutput'].OutputValue" \
+        --output text 2>/dev/null || true)
+    echo "Report bucket: $report_bucket"
+
     # --- Fetch current Lambda B env vars (to avoid clobbering other vars) ---
     local current_env
     current_env=$(aws lambda get-function-configuration \
@@ -296,6 +308,8 @@ if '$sg_id' and '$sg_id' != 'None':
     env['ECS_SECURITY_GROUPS'] = '$sg_id'
 if '$cluster_name' and '$cluster_name' != 'None':
     env['ECS_CLUSTER_NAME'] = '$cluster_name'
+if '$report_bucket' and '$report_bucket' != 'None':
+    env['S3_BUCKET_NAME'] = '$report_bucket'
 print(json.dumps({'Variables': env}))
 PYEOF
 )
@@ -305,7 +319,7 @@ PYEOF
         --region "$AWS_REGION" \
         --environment "$new_env" > /dev/null
 
-    echo -e "${GREEN}Lambda B synced: task_def=$task_def_family subnets=$subnet_ids sg=$sg_id${NC}"
+    echo -e "${GREEN}Lambda B synced: task_def=$task_def_family subnets=$subnet_ids sg=$sg_id bucket=$report_bucket${NC}"
 }
 
 show_deployment_info() {
