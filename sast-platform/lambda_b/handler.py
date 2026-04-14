@@ -3,6 +3,7 @@ Lambda B Main Handler
 Responsibilities:
 1. Extract scan task information from SQS messages
 2. Call scanning engine for code security analysis
+
 3. Parse and standardize scan results
 4. Write results to S3 and update DynamoDB status
 """
