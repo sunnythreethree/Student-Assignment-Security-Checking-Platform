@@ -186,7 +186,7 @@ sast-platform/
 ├── lambda_b/               # Scan engine
 │   ├── handler.py          # SQS consumer, atomic IN_PROGRESS claim
 │   ├── scanner.py          # Bandit runner (Python)
-│   ├── scanner.js          # Semgrep runner (JS/TS/Java/Go/Ruby/C/C++)
+│   ├── scanner.js          # Semgrep runner (JS/TS/Java/Go/Ruby)
 │   ├── result_parser.py    # Normalise raw tool output
 │   ├── s3_writer.py        # Write report + generate presigned URL
 │   ├── ecs_handler.py      # ECS Fargate fallback for large submissions
