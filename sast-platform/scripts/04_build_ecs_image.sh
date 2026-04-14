@@ -213,14 +213,28 @@ update_ecs_task_definition() {
     fi
 
     echo -e "${YELLOW}Updating ECS task definition with new image URI...${NC}"
-    aws cloudformation deploy \
+    # aws cloudformation deploy always requires --template-file and does not
+    # support --use-previous-template.  Use update-stack instead, which does
+    # support --use-previous-template.
+    if aws cloudformation update-stack \
         --stack-name "$stack_name" \
         --region "$AWS_REGION" \
         --use-previous-template \
-        --parameter-overrides "ScannerImageUri=${ECR_URI}:${IMAGE_TAG}" \
-        --no-fail-on-empty-changeset \
-        --capabilities CAPABILITY_IAM
-    echo -e "${GREEN}ECS task definition updated → ${ECR_URI}:${IMAGE_TAG}${NC}"
+        --parameters \
+            "ParameterKey=ProjectName,UsePreviousValue=true" \
+            "ParameterKey=Environment,UsePreviousValue=true" \
+            "ParameterKey=VpcId,UsePreviousValue=true" \
+            "ParameterKey=SubnetIds,UsePreviousValue=true" \
+            "ParameterKey=ScannerImageUri,ParameterValue=${ECR_URI}:${IMAGE_TAG}" \
+            "ParameterKey=DynamoDBTableName,UsePreviousValue=true" \
+            "ParameterKey=S3BucketName,UsePreviousValue=true" \
+        --capabilities CAPABILITY_IAM 2>&1; then
+        aws cloudformation wait stack-update-complete \
+            --stack-name "$stack_name" --region "$AWS_REGION"
+        echo -e "${GREEN}ECS task definition updated → ${ECR_URI}:${IMAGE_TAG}${NC}"
+    else
+        echo "No stack update needed (image URI unchanged or no update required)"
+    fi
 }
 
 # After updating the ECS stack, sync Lambda B's ECS-related env vars so it can
