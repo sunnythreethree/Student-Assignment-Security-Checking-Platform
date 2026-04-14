@@ -8,41 +8,20 @@ A serverless static analysis platform on AWS. Students submit source code via a 
 
 ## Quick Start
 
-**Deploy the full platform in one command:**
+**The platform is live.** No setup required — just open the frontend and start scanning.
 
-```bash
-# 1. Clone the repo
-git clone https://github.com/sunnythreethree/Student-Assignment-Security-Checking-Platform.git
-cd Student-Assignment-Security-Checking-Platform/sast-platform
-
-# 2. Create an S3 bucket for Lambda deployment packages (one-time)
-aws s3 mb s3://my-sast-deploy-bucket --region us-east-1
-
-# 3. Deploy everything
-./scripts/deploy.sh --code-bucket my-sast-deploy-bucket
-
-# 4. Seed an API key for a student
-python scripts/00_seed_auth.py --table StudentAuth --add-student zhang.jings
-
-# 5. Open the frontend URL printed at the end of step 3
+**Frontend URL:**
+```
+http://sast-platform-frontend-dev-891377348481.s3-website-us-east-1.amazonaws.com
 ```
 
-That's it. The script provisions all AWS infrastructure, packages and deploys both Lambda functions, uploads the frontend, and optionally runs a smoke test.
+1. Open the URL above in your browser
+2. Enter your **Student ID** and **API Key** to log in
+3. Paste or upload source code, select the language, and click **Scan**
+4. The page polls automatically — when status is `DONE`, click **Download Report** for the JSON vulnerability report
+5. The **History** tab shows your last 50 scans
 
-> **With ECS Fargate fallback + smoke test:**
-> ```bash
-> ./scripts/deploy.sh \
->   --code-bucket my-sast-deploy-bucket \
->   --vpc-id vpc-xxxxxxxx \
->   --subnets subnet-aaa,subnet-bbb \
->   --student-key <api-key-from-step-4>
-> ```
-
-> **Via Make:**
-> ```bash
-> make deploy CODE_BUCKET=my-sast-deploy-bucket
-> make deploy CODE_BUCKET=my-sast-deploy-bucket VPC_ID=vpc-xxx SUBNETS=subnet-aaa STUDENT_KEY=abc123
-> ```
+> Need an API key? A course admin runs `python scripts/00_seed_auth.py --table StudentAuth --add-student <student-id>` and shares the generated key.
 
 ---
 
@@ -60,14 +39,20 @@ Browser
   │                                                         (code blob)        │
   │                                                                             ▼
   │                                                                        Lambda B
-  │                                                                        scanner.py
-  │                                                                        result_parser.py
-  │                                                                        s3_writer.py
+  │                                                                        scanner.py / scanner.js
   │                                                                             │
-  │                                                                        ┌────┴────┐
-  │                                                                        S3        DynamoDB
-  │                                                                  reports/       ScanResults
-  │                                                              {scan_id}.json
+  │                                                              ┌──────────────┴──────────────┐
+  │                                                         (small files)              (large files)
+  │                                                              │                              │
+  │                                                        Bandit / Semgrep          ECS Fargate task
+  │                                                        (in Lambda)               (Docker container)
+  │                                                              │                              │
+  │                                                              └──────────────┬──────────────┘
+  │                                                                             │
+  │                                                                    ┌────────┴────────┐
+  │                                                                    S3                DynamoDB
+  │                                                              reports/              ScanResults
+  │                                                          {scan_id}.json
   │
   ├─ GET /status?scan_id=xxx ──────────────────────────────────►  Lambda A
   │                                                               → presigned S3 URL
@@ -76,154 +61,70 @@ Browser
                                                                   → last 50 scans
 ```
 
-**Scan status lifecycle:** `PENDING` → `IN_PROGRESS` → `DONE` | `FAILED`
+**Scan status lifecycle:**
+```
+PENDING → IN_PROGRESS → DONE | FAILED
+       └→ ECS_QUEUED  → IN_PROGRESS → DONE | FAILED
+```
+Large submissions are routed to ECS Fargate (`ECS_QUEUED`) instead of running inside Lambda.
 
 ---
 
-## Prerequisites
-
-| Tool | Version | Required for |
-|------|---------|-------------|
-| AWS CLI | any | All deployment |
-| AWS credentials | configured | All deployment (`aws configure` or IAM role) |
-| Python | 3.12+ | Lambda code + tests |
-| `jq` | any | Smoke test (`05_test_api.sh`) |
-| Docker | any | ECS image build only (optional) |
-
-Install on macOS:
-```bash
-brew install awscli python jq
-```
-
-Install on Ubuntu/Debian:
-```bash
-sudo apt install awscli python3 jq
-```
-
-Configure AWS credentials:
-```bash
-aws configure          # enter Access Key ID, Secret, region, output format
-aws sts get-caller-identity   # verify — should print your account ID
-```
-
----
-
-## Deployment
-
-### Option A — Single command (recommended)
-
-```bash
-cd sast-platform
-./scripts/deploy.sh --code-bucket <your-s3-bucket> [OPTIONS]
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--code-bucket` | *(required)* | S3 bucket for Lambda zip uploads |
-| `--env` | `dev` | Environment tag applied to all stacks |
-| `--region` | `us-east-1` | AWS region |
-| `--vpc-id` | — | Enable ECS Fargate fallback (requires `--subnets`) |
-| `--subnets` | — | Comma-separated subnet IDs for ECS tasks |
-| `--scanner-image` | auto | ECR image URI override for ECS scanner |
-| `--student-key` | — | Run end-to-end smoke test with this API key |
-| `--skip-ecs` | — | Skip ECS image build even when `--vpc-id` is set |
-| `--skip-test` | — | Skip smoke test unconditionally |
-
-**What it runs internally:**
-
-| Step | Script | What it does |
-|------|--------|-------------|
-| 1 | `01_setup_infra.sh` | Deploy all CloudFormation stacks |
-| 2 | `02_deploy_lambda_a.sh` | Package and deploy Lambda A |
-| 3 | `03_deploy_lambda_b.sh` | Package and deploy Lambda B |
-| 4 | `04_build_ecs_image.sh` | Build + push ECS scanner image *(only with `--vpc-id`)* |
-| 5 | `04_upload_frontend.sh` | Inject Lambda URL, sync frontend to S3 |
-| 6 | `05_test_api.sh` | End-to-end smoke test *(only with `--student-key`)* |
-
-### Option B — Step by step
-
-Run from `sast-platform/scripts/` if you need to deploy or redeploy individual components:
-
-```bash
-cd sast-platform/scripts
-
-# 1. CloudFormation stacks (S3, DynamoDB, SQS, Lambda A/B, CloudWatch)
-./01_setup_infra.sh --code-bucket <bucket> --env dev
-
-# 2. Lambda A code
-./02_deploy_lambda_a.sh --code-bucket <bucket>
-
-# 3. Lambda B code
-./03_deploy_lambda_b.sh   # reads CODE_BUCKET env var
-
-# 4a. (Optional) ECS scanner image
-./04_build_ecs_image.sh
-
-# 4b. Frontend
-./04_upload_frontend.sh
-
-# 5. Smoke test
-LAMBDA_URL=<url> STUDENT_KEY=<key> ./05_test_api.sh
-```
-
-### Seed API keys
-
-Students need an API key to authenticate. Generate keys after deploying infrastructure:
-
-```bash
-# Add a single student
-python scripts/00_seed_auth.py --table StudentAuth --add-student zhang.jings
-
-# Bulk-add from a file (one student ID per line)
-python scripts/00_seed_auth.py --table StudentAuth --students students.txt
-```
-
-The generated key is printed to stdout — share it with the student securely.
-
----
-
-## Using the Platform
-
-### As a student
-
-1. **Open the frontend** — use the URL printed at the end of deployment (or find it in the CloudFormation output for `sast-platform-s3` → `FrontendWebsiteURL`).
-
-2. **Enter your Student ID and API key** in the login form.
-
-3. **Paste or upload your source code**, select the language, and click **Scan**.
-
-4. **Wait for results** — the page polls automatically. When the scan is `DONE`, a download button appears for the JSON vulnerability report.
-
-5. **View scan history** — the History tab shows your last 50 scans.
-
-### Supported languages
+## Supported Languages
 
 `python` · `java` · `javascript` · `typescript` · `go` · `ruby` · `c` · `cpp`
 
-### Via the API directly
+---
 
-```bash
-LAMBDA_URL=https://<your-function-url>
-STUDENT_KEY=<your-api-key>
+## CI/CD Pipeline
 
-# Submit a scan
-curl -X POST "$LAMBDA_URL/scan" \
-  -H "Content-Type: application/json" \
-  -H "X-Student-Key: $STUDENT_KEY" \
-  -d '{"code": "import os\nos.system(input())", "language": "python"}'
-# → {"scan_id": "scan-a1b2c3d4", "status": "PENDING", ...}
+All deployments go through GitHub Actions. Pushing to `main` triggers the CD workflow automatically; each job only runs when its relevant files change (path filter).
 
-# Poll for results
-curl "$LAMBDA_URL/status?scan_id=scan-a1b2c3d4" \
-  -H "X-Student-Key: $STUDENT_KEY"
-# → {"status": "DONE", "vuln_count": 1, "report_url": "https://..."}
-
-# View history
-curl "$LAMBDA_URL/history" \
-  -H "X-Student-Key: $STUDENT_KEY"
+```
+push to main
+     │
+     ├─ test          (always)      unit tests with moto
+     ├─ changes       (always)      detect which components changed
+     │
+     ├─ deploy-infra  (infra/**)    CloudFormation stacks
+     ├─ deploy-lambda-a (lambda_a/**) Lambda A code update
+     ├─ deploy-lambda-b (lambda_b/**) Lambda B code update
+     ├─ build-ecs     (lambda_b/**) ECS Docker image rebuild
+     └─ deploy-frontend (frontend/**) S3 frontend upload
 ```
 
-Rate limit: **10 scans per hour per student**.
+**Manual full re-deploy** (e.g. after AWS Learner Lab credential rotation):
+
+1. Go to **Actions → CD** in GitHub
+2. Click **Run workflow**
+3. Leave `force_all` as `true` (default) — bypasses path filter, runs all jobs
+4. Click **Run workflow**
+
+For full pipeline documentation see [`deployment-pipeline.md`](deployment-pipeline.md).
+
+---
+
+## Monitoring Dashboard
+
+The CloudWatch dashboard shows live metrics across the entire scan pipeline.
+
+**Dashboard URL:**
+```
+https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=sast-platform-dev-overview
+```
+
+Or navigate manually: AWS Console → CloudWatch → Dashboards → `sast-platform-dev-overview`
+
+**What's monitored:**
+
+| Section | Metrics | Alarms |
+|---------|---------|--------|
+| Lambda A (API layer) | Invocations, Errors, Duration (avg+p99), Throttles | ≥3 errors/5min · avg ≥25s · any throttle |
+| Lambda B (scan engine) | Invocations, Errors, Duration, Concurrent executions | ≥5 errors · ≥13min duration |
+| SQS (scan queue) | Queue depth, Throughput (sent vs processed), DLQ | ≥50 messages · any DLQ message |
+| DynamoDB (ScanResults) | Latency (PutItem/UpdateItem/Query), Throttles, System errors | ≥5 throttles · any system error |
+
+Alarms publish to an SNS topic (`sast-platform-dev-alerts`). Configure `AlertEmail` in `cloudwatch.yaml` to receive email notifications.
 
 ---
 
@@ -253,9 +154,11 @@ make test-no-scan   # skip scanner (no bandit/semgrep needed)
 make test           # unit + integration
 ```
 
+---
+
 ## E2E Scanner Validation (requires live stack)
 
-`test-samples/` contains vulnerable code files in 5 languages and an automated test runner that validates the full scan pipeline against a deployed AWS environment.
+`test-samples/` contains vulnerable code files in 5 languages and an automated test runner that validates the full scan pipeline against the deployed AWS environment.
 
 **11 test scenarios** — 5 API validation + 6 scanner:
 
@@ -269,7 +172,7 @@ make test           # unit + integration
 | Lambda B | B6 | Clean Python — 0 findings (false-positive check) |
 
 ```bash
-# Run all 11 tests against a deployed stack
+# Run all 11 tests against the deployed stack
 python test-samples/e2e_test.py \
   --url <LAMBDA_A_FUNCTION_URL> \
   --student-id <YOUR_STUDENT_ID>
@@ -295,14 +198,22 @@ sast-platform/
 │   └── requirements.txt
 ├── lambda_b/               # Scan engine
 │   ├── handler.py          # SQS consumer, atomic IN_PROGRESS claim
-│   ├── scanner.py          # Bandit + Semgrep runner
+│   ├── scanner.py          # Bandit runner (Python)
+│   ├── scanner.js          # Semgrep runner (JS/TS/Java/Go/Ruby/C/C++)
 │   ├── result_parser.py    # Normalise raw tool output
 │   ├── s3_writer.py        # Write report + generate presigned URL
 │   ├── ecs_handler.py      # ECS Fargate fallback for large submissions
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/               # Static HTML + CSS + JS
-├── infrastructure/         # CloudFormation templates (S3, DynamoDB, SQS, Lambda, ECS, CloudWatch)
+├── infrastructure/         # CloudFormation templates
+│   ├── s3.yaml             # Report + frontend buckets
+│   ├── dynamodb.yaml       # ScanResults + StudentAuth tables
+│   ├── sqs.yaml            # Scan queue + DLQ
+│   ├── lambda_a.yaml       # API Lambda
+│   ├── lambda_b.yaml       # Scanner Lambda
+│   ├── ecs.yaml            # Fargate fallback cluster
+│   └── cloudwatch.yaml     # Alarms + dashboard
 ├── scripts/
 │   ├── deploy.sh           # Single-command full-stack deploy (wraps 01–05)
 │   ├── 00_seed_auth.py     # Seed student API keys into DynamoDB
@@ -325,13 +236,17 @@ sast-platform/
 └── pytest.ini
 ```
 
+Root-level docs:
+- [`deployment-pipeline.md`](deployment-pipeline.md) — full CD workflow documentation
+- [`debugging-js-scan-failure.md`](debugging-js-scan-failure.md) — JS scan debugging log (13 fixes)
+
 ---
 
 ## API Reference
 
 **Authentication:** all endpoints require `X-Student-Key: <api_key>` header.
 
-**Base URL:** Lambda A Function URL (printed by `deploy.sh` or `01_setup_infra.sh`).
+**Base URL:** Lambda A Function URL (visible in AWS Console → Lambda → `sast-lambda-a` → Function URL).
 
 ### `POST /scan`
 
@@ -396,6 +311,8 @@ Returns the 50 most recent scans for the authenticated student.
 }
 ```
 
+Rate limit: **10 scans per hour per student**.
+
 ---
 
 ## Infrastructure Stacks
@@ -404,17 +321,50 @@ Returns the 50 most recent scans for the authenticated student.
 |-------|----------|-----------------|
 | `sast-platform-s3` | `infrastructure/s3.yaml` | Report bucket + frontend bucket |
 | `sast-platform-dynamodb` | `infrastructure/dynamodb.yaml` | ScanResults + StudentAuth tables |
-| `sast-platform-sqs` | `infrastructure/sqs.yaml` | Scan queue + DLQ + DLQ alarm |
+| `sast-platform-sqs` | `infrastructure/sqs.yaml` | Scan queue + DLQ |
 | `sast-platform-lambda-a` | `infrastructure/lambda_a.yaml` | API + dispatch (rate limit: 10 scans/hour/student) |
 | `sast-platform-lambda-b` | `infrastructure/lambda_b.yaml` | Scanner worker |
-| `sast-platform-ecs` | `infrastructure/ecs.yaml` | Fargate fallback for large submissions (optional) |
+| `sast-platform-ecs` | `infrastructure/ecs.yaml` | Fargate fallback for large submissions |
 | `sast-platform-cloudwatch` | `infrastructure/cloudwatch.yaml` | Alarms + dashboard |
+
+---
+
+## Deployment
+
+Deployments are fully automated via GitHub Actions — see [`deployment-pipeline.md`](deployment-pipeline.md) for details.
+
+For manual deployment (e.g. local testing or emergency re-deploy):
+
+```bash
+cd sast-platform
+
+# Deploy everything in one command
+./scripts/deploy.sh --code-bucket <your-s3-bucket>
+
+# With ECS Fargate fallback + smoke test
+./scripts/deploy.sh \
+  --code-bucket <your-s3-bucket> \
+  --vpc-id vpc-xxxxxxxx \
+  --subnets subnet-aaa,subnet-bbb \
+  --student-key <api-key>
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--code-bucket` | *(required)* | S3 bucket for Lambda zip uploads |
+| `--env` | `dev` | Environment tag applied to all stacks |
+| `--region` | `us-east-1` | AWS region |
+| `--vpc-id` | — | Enable ECS Fargate fallback |
+| `--subnets` | — | Comma-separated subnet IDs for ECS tasks |
+| `--student-key` | — | Run end-to-end smoke test with this API key |
+
+**AWS credentials for Learner Lab:** update `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` in GitHub → Settings → Secrets after each Lab session.
 
 ---
 
 ## Demo
 
-`sast-platform/tests/fixtures/` contains two sample files that produce known findings:
+`sast-platform/tests/fixtures/` contains sample files that produce known findings:
 
 | File | Language | Expected findings |
 |------|----------|-------------------|
@@ -433,6 +383,6 @@ LAMBDA_URL=<url> STUDENT_KEY=<key> ./scripts/05_test_api.sh
 
 | Member | GitHub | Responsibilities |
 |--------|--------|-----------------|
-| Jingsi Zhang | @tyrahappy | Lambda A, auth, dispatcher, infra scripts, tests |
-| Mengshan Li | @sunnythreethree | Frontend, S3 infra, upload script |
-| Jiahua Wu | @beibei-ui | Lambda B, scanner, ECS, CloudWatch |
+| Jingsi Zhang | @tyrahappy | Lambda A, auth, dispatcher, infra scripts, CI/CD pipeline, tests |
+| Mengshan Li | @sunnythreethrees | Frontend, S3 infra, upload script |
+| Jiahua Wu | @beibei-ui | Lambda B, scanner, ECS Fargate, CloudWatch |
