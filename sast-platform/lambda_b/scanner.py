@@ -1,8 +1,8 @@
 """
 this module runs security scans on code
 python -> bandit
-javascript/typescript -> teacher's scanner.js (extended with additional semgrep rules)
-java/go/ruby/c/cpp -> semgrep
+javascript/typescript -> teacher's scanner.js (falls back to semgrep if Node.js unavailable)
+java/go/ruby -> semgrep
 """
 import json
 import os
@@ -48,7 +48,7 @@ class SecurityScanner:
         decide which tool to use based on language
         """
         try:
-            # create a temp folder to store code file；will be cleaned up after scan
+            # create a temp folder to store code file; will be cleaned up after scan
             with tempfile.TemporaryDirectory() as temp_dir:
                 self.temp_dir = temp_dir
 
@@ -200,7 +200,7 @@ class SecurityScanner:
 
     def _scan_with_semgrep(self, code: str, language: str, scan_id: str, timeout: int = 300):
         """
-        use semgrep for java / go / ruby / c / cpp
+        use semgrep for java / go / ruby
         """
         logger.info("starting semgrep scan %s (config: %s)", scan_id, _SEMGREP_CONFIG)
 
