@@ -696,6 +696,60 @@ function updateLineNumbers() {
   lineNumbers.scrollTop = textarea.scrollTop;
 }
 
+function detectLanguageFromCode(code) {
+  if (!code || code.trim().length < 20) return null;
+  const s = code;
+  const scores = {
+    python:     0,
+    java:       0,
+    javascript: 0,
+    typescript: 0,
+    go:         0,
+    ruby:       0,
+  };
+
+  // Python
+  if (/^\s*(def |class |import |from .+ import |if __name__|@\w+\n\s*def )/m.test(s)) scores.python += 3;
+  if (/:\s*$/.test(s) && /\bdef \w+\(/.test(s)) scores.python += 2;
+  if (/\bprint\s*\(/.test(s) || /\bself\b/.test(s)) scores.python += 1;
+  if (/\bpip\b|\brequirements\.txt\b/.test(s)) scores.python += 1;
+
+  // Ruby
+  if (/\bdo\s*\|.*\||\bend\b/.test(s) && /\bdef \w+/.test(s)) scores.ruby += 3;
+  if (/\brequire\s+['"]|\.each\s+do\s*\||\bputs\b/.test(s)) scores.ruby += 2;
+  if (/\battr_accessor\b|\battr_reader\b|\bGemfile\b/.test(s)) scores.ruby += 2;
+  if (/\bnil\b/.test(s) && !/null/.test(s)) scores.ruby += 1;
+
+  // Go
+  if (/\bpackage \w+/.test(s) && /\bfunc \w+/.test(s)) scores.go += 4;
+  if (/\bfmt\.Print|\bfmt\.Sprintf/.test(s)) scores.go += 2;
+  if (/\b:=\b/.test(s)) scores.go += 2;
+  if (/\bimport\s+\(/.test(s)) scores.go += 1;
+
+  // Java
+  if (/\bpublic\s+class\b|\bprivate\s+\w+\s+\w+\s*[=;(]/.test(s)) scores.java += 3;
+  if (/\bSystem\.out\.print|\bvoid\b.*\(/.test(s)) scores.java += 2;
+  if (/\bnew\s+\w+\(/.test(s) && /;$/.test(s.trim())) scores.java += 1;
+  if (/@Override|@SuppressWarnings/.test(s)) scores.java += 2;
+
+  // TypeScript (check before JS)
+  if (/:\s*(string|number|boolean|any|void|never)\b/.test(s)) scores.typescript += 3;
+  if (/\binterface \w+|\btype \w+\s*=/.test(s)) scores.typescript += 3;
+  if (/<\w+(\[\])?>\s*\(|as\s+\w+/.test(s)) scores.typescript += 2;
+
+  // JavaScript
+  if (/\bconst\b|\blet\b|\bvar\b/.test(s)) scores.javascript += 1;
+  if (/\bconsole\.log\b|\bdocument\.\b|\bwindow\.\b/.test(s)) scores.javascript += 2;
+  if (/=>\s*\{|require\s*\(|module\.exports/.test(s)) scores.javascript += 2;
+  if (/\bfunction\b/.test(s)) scores.javascript += 1;
+
+  // TypeScript beats JS if TS score is higher
+  if (scores.typescript > 0) scores.javascript = Math.max(0, scores.javascript - scores.typescript);
+
+  const best = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  return best[1] >= 2 ? best[0] : null;
+}
+
 function updateCodeStats() {
   const code  = document.getElementById("code").value;
   const stats = document.getElementById("code-stats");
@@ -715,6 +769,13 @@ function updateCodeStats() {
   const size  = bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
   stats.textContent = `${lines} lines · ${size}`;
   clearBtn?.classList.add("visible");
+
+  // Auto-detect language only if user hasn't chosen one yet
+  const langSelect = document.getElementById("language");
+  if (langSelect && !langSelect.value) {
+    const detected = detectLanguageFromCode(code);
+    if (detected) langSelect.value = detected;
+  }
 }
 
 function clearCode() {
