@@ -688,6 +688,7 @@ function updateCodeStats() {
 
 function clearCode() {
   document.getElementById("code").value = "";
+  document.getElementById("language").value = "";
   updateCodeStats();
   document.getElementById("code").focus();
 
