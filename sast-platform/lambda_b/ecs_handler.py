@@ -46,7 +46,7 @@ def _fetch_code(s3_bucket_name: str) -> str:
     """
     s3_code_key = os.environ.get("S3_CODE_KEY")
     if s3_code_key:
-        logger.info(f"Fetching code from S3: {s3_code_key}")
+        logger.info(f"Fetching code from S3: bucket={s3_bucket_name} key={s3_code_key}")
         response = s3_client.get_object(Bucket=s3_bucket_name, Key=s3_code_key)
         return response["Body"].read().decode("utf-8")
 
@@ -58,11 +58,13 @@ def _fetch_code(s3_bucket_name: str) -> str:
 
 
 def main():
+    scan_id    = os.environ.get("SCAN_ID")
+    student_id = os.environ.get("STUDENT_ID")
+    table_name = os.environ.get("DYNAMODB_TABLE_NAME")
+    table      = dynamodb.Table(table_name) if table_name else None
+
     try:
-        scan_id        = os.environ["SCAN_ID"]
-        student_id     = os.environ["STUDENT_ID"]
         language       = os.environ["LANGUAGE"]
-        table_name     = os.environ["DYNAMODB_TABLE_NAME"]
         s3_bucket_name = os.environ["S3_BUCKET_NAME"]
 
         logger.info(f"Start scan task: {scan_id}")
@@ -70,9 +72,6 @@ def main():
         # fetch source code (S3 key preferred, inline env var as fallback)
         s3_code_key  = os.environ.get("S3_CODE_KEY")
         code_content = _fetch_code(s3_bucket_name)
-
-        # connect to table
-        table = dynamodb.Table(table_name)
 
         # run the main scan process
         result = process_ecs_scan(
@@ -94,6 +93,14 @@ def main():
 
     except Exception as e:
         logger.error(f"ECS task crashed: {str(e)}")
+        # Update DynamoDB to FAILED so the frontend doesn't stay stuck
+        # on "Scanning in progress..." forever when the container crashes.
+        if table and scan_id and student_id:
+            try:
+                update_scan_status_ecs(table, student_id, scan_id, "FAILED",
+                                       error_message=f"ECS container crashed: {str(e)}")
+            except Exception as db_err:
+                logger.error(f"Failed to write FAILED status after crash: {db_err}")
         sys.exit(1)
 
 
