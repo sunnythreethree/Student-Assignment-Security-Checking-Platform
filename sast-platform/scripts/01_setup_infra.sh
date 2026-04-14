@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 01_setup_infra.sh — Deploy all CloudFormation stacks in dependency order.
+# Note: ECS stack is created only when --vpc-id is provided.
 #
 # Usage:
 #   ./01_setup_infra.sh [OPTIONS]

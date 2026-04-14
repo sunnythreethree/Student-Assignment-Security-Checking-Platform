@@ -249,7 +249,14 @@ update_lambda_b_task_def_env() {
         echo "Subnets: $subnet_ids"
     fi
 
-    # --- Get ECS security group from CloudFormation stack output ---
+    # --- Get ECS cluster name + security group from CloudFormation stack output ---
+    local cluster_name
+    cluster_name=$(aws cloudformation describe-stacks \
+        --stack-name "$ecs_stack" --region "$AWS_REGION" \
+        --query "Stacks[0].Outputs[?OutputKey=='ECSClusterName'].OutputValue" \
+        --output text 2>/dev/null || true)
+    echo "Cluster: $cluster_name"
+
     sg_id=$(aws cloudformation describe-stacks \
         --stack-name "$ecs_stack" --region "$AWS_REGION" \
         --query "Stacks[0].Outputs[?OutputKey=='ECSSecurityGroupId'].OutputValue" \
@@ -274,6 +281,8 @@ if '$subnet_ids':
     env['ECS_SUBNETS'] = '$subnet_ids'
 if '$sg_id' and '$sg_id' != 'None':
     env['ECS_SECURITY_GROUPS'] = '$sg_id'
+if '$cluster_name' and '$cluster_name' != 'None':
+    env['ECS_CLUSTER_NAME'] = '$cluster_name'
 print(json.dumps({'Variables': env}))
 PYEOF
 )
