@@ -204,7 +204,7 @@ cleanup_local_images() {
 }
 
 update_ecs_task_definition() {
-    local stack_name="${PROJECT_NAME}-${ENVIRONMENT}-ecs"
+    local stack_name="${PROJECT_NAME}-ecs"
 
     if ! aws cloudformation describe-stacks \
             --stack-name "$stack_name" --region "$AWS_REGION" &>/dev/null; then
@@ -231,7 +231,7 @@ update_ecs_task_definition() {
 update_lambda_b_task_def_env() {
     local lambda_func="${PROJECT_NAME}-${ENVIRONMENT}-scanner"
     local task_def_family="${PROJECT_NAME}-${ENVIRONMENT}-scanner"
-    local ecs_stack="${PROJECT_NAME}-${ENVIRONMENT}-ecs"
+    local ecs_stack="${PROJECT_NAME}-ecs"
 
     echo -e "${YELLOW}Syncing Lambda B ECS env vars...${NC}"
 
