@@ -223,17 +223,40 @@ update_ecs_task_definition() {
     echo -e "${GREEN}ECS task definition updated → ${ECR_URI}:${IMAGE_TAG}${NC}"
 }
 
-# After updating the ECS stack (which creates a new task definition revision),
-# point Lambda B to the task definition FAMILY NAME instead of a specific revision ARN.
-# Using the family name means ECS always picks the latest active revision automatically,
-# so future image rebuilds take effect without needing to redeploy Lambda B.
+# After updating the ECS stack, sync Lambda B's ECS-related env vars so it can
+# actually launch Fargate tasks:
+#   ECS_TASK_DEFINITION  → family name (no revision), always picks latest
+#   ECS_SUBNETS          → default-VPC subnets (auto-detected)
+#   ECS_SECURITY_GROUPS  → security group from the ECS CloudFormation stack
 update_lambda_b_task_def_env() {
     local lambda_func="${PROJECT_NAME}-${ENVIRONMENT}-scanner"
     local task_def_family="${PROJECT_NAME}-${ENVIRONMENT}-scanner"
+    local ecs_stack="${PROJECT_NAME}-${ENVIRONMENT}-ecs"
 
-    echo -e "${YELLOW}Updating Lambda B ECS_TASK_DEFINITION → family name...${NC}"
+    echo -e "${YELLOW}Syncing Lambda B ECS env vars...${NC}"
 
-    # Fetch all current env vars so we don't clobber them
+    # --- Auto-detect default VPC subnets ---
+    local vpc_id subnet_ids sg_id
+    vpc_id=$(aws ec2 describe-vpcs --region "$AWS_REGION" \
+        --filters "Name=isDefault,Values=true" \
+        --query "Vpcs[0].VpcId" --output text 2>/dev/null || true)
+
+    if [[ -n "$vpc_id" && "$vpc_id" != "None" ]]; then
+        subnet_ids=$(aws ec2 describe-subnets --region "$AWS_REGION" \
+            --filters "Name=vpc-id,Values=$vpc_id" "Name=defaultForAz,Values=true" \
+            --query "Subnets[:2].SubnetId" --output text 2>/dev/null \
+            | tr '[:space:]' ',' | sed 's/,$//' || true)
+        echo "Subnets: $subnet_ids"
+    fi
+
+    # --- Get ECS security group from CloudFormation stack output ---
+    sg_id=$(aws cloudformation describe-stacks \
+        --stack-name "$ecs_stack" --region "$AWS_REGION" \
+        --query "Stacks[0].Outputs[?OutputKey=='ECSSecurityGroupId'].OutputValue" \
+        --output text 2>/dev/null || true)
+    echo "Security group: $sg_id"
+
+    # --- Fetch current Lambda B env vars (to avoid clobbering other vars) ---
     local current_env
     current_env=$(aws lambda get-function-configuration \
         --function-name "$lambda_func" \
@@ -241,21 +264,26 @@ update_lambda_b_task_def_env() {
         --query 'Environment.Variables' \
         --output json 2>/dev/null || echo '{}')
 
-    # Merge: replace only ECS_TASK_DEFINITION
+    # --- Merge updates into existing env vars ---
     local new_env
-    new_env=$(python3 -c "
-import json, sys
+    new_env=$(python3 - <<PYEOF
+import json
 env = json.loads('''$current_env''')
 env['ECS_TASK_DEFINITION'] = '$task_def_family'
+if '$subnet_ids':
+    env['ECS_SUBNETS'] = '$subnet_ids'
+if '$sg_id' and '$sg_id' != 'None':
+    env['ECS_SECURITY_GROUPS'] = '$sg_id'
 print(json.dumps({'Variables': env}))
-")
+PYEOF
+)
 
     aws lambda update-function-configuration \
         --function-name "$lambda_func" \
         --region "$AWS_REGION" \
         --environment "$new_env" > /dev/null
 
-    echo -e "${GREEN}Lambda B ECS_TASK_DEFINITION = $task_def_family (always latest revision)${NC}"
+    echo -e "${GREEN}Lambda B synced: task_def=$task_def_family subnets=$subnet_ids sg=$sg_id${NC}"
 }
 
 show_deployment_info() {
