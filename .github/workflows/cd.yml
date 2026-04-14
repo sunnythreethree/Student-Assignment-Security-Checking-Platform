@@ -49,6 +49,7 @@ jobs:
               - 'sast-platform/frontend/**'
             infra:
               - 'sast-platform/infrastructure/**'
+              - 'sast-platform/scripts/01_setup_infra.sh'
 
   # ── 3. CloudFormation stacks (only when infrastructure yaml files change) ──
   deploy-infra:

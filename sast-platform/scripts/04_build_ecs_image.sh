@@ -203,16 +203,30 @@ cleanup_local_images() {
     echo -e "${GREEN}Cleanup complete${NC}"
 }
 
+update_ecs_task_definition() {
+    local stack_name="${PROJECT_NAME}-${ENVIRONMENT}-ecs"
+
+    if ! aws cloudformation describe-stacks \
+            --stack-name "$stack_name" --region "$AWS_REGION" &>/dev/null; then
+        echo "ECS CloudFormation stack '$stack_name' not found — skipping task definition update"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Updating ECS task definition with new image URI...${NC}"
+    aws cloudformation deploy \
+        --stack-name "$stack_name" \
+        --region "$AWS_REGION" \
+        --use-previous-template \
+        --parameter-overrides "ScannerImageUri=${ECR_URI}:${IMAGE_TAG}" \
+        --no-fail-on-empty-changeset \
+        --capabilities CAPABILITY_IAM
+    echo -e "${GREEN}ECS task definition updated → ${ECR_URI}:${IMAGE_TAG}${NC}"
+}
+
 show_deployment_info() {
     echo
     echo -e "${GREEN}=== Image Info ===${NC}"
     echo -e "ECR URI: ${GREEN}$ECR_URI:$IMAGE_TAG${NC}"
-    echo -e "Image size: $(docker images "$ECR_URI:$IMAGE_TAG" --format "{{.Size}}")"
-    echo
-    echo "Next steps:"
-    echo "1. Update the ECS task definition image URI"
-    echo "2. Set the ECS_TASK_DEFINITION environment variable in Lambda B"
-    echo "3. Ensure the ECS service has permission to pull from ECR"
     echo
     echo "Local test command:"
     echo "docker run --rm -e SCAN_ID=test -e STUDENT_ID=test -e LANGUAGE=python -e CODE_CONTENT='print(\"hello\")' $ECR_URI:$IMAGE_TAG"
@@ -232,6 +246,7 @@ main() {
     fi
 
     push_docker_image
+    update_ecs_task_definition
     cleanup_local_images
     show_deployment_info
 

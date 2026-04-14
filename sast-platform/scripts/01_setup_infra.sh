@@ -225,7 +225,8 @@ ECS_CLUSTER_NAME=""
 ECS_TASK_DEF_ARN=""
 
 if [[ -n "$VPC_ID" ]]; then
-  DEFAULT_IMAGE="${PROJECT_NAME}.dkr.ecr.${AWS_REGION}.amazonaws.com/sast-scanner:latest"
+  _ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  DEFAULT_IMAGE="${_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT_NAME}-${ENVIRONMENT}-scanner:latest"
   SCANNER_IMAGE="${SCANNER_IMAGE:-$DEFAULT_IMAGE}"
 
   deploy_stack "$STACK_ECS" "$INFRA_DIR/ecs.yaml" \
