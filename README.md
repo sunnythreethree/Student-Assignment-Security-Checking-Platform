@@ -16,12 +16,11 @@ http://sast-platform-frontend-dev-891377348481.s3-website-us-east-1.amazonaws.co
 ```
 
 1. Open the URL above in your browser
-2. Enter your **Student ID** and **API Key** to log in
+2. Enter your **Student ID** to log in
 3. Paste or upload source code, select the language, and click **Scan**
 4. The page polls automatically — when status is `DONE`, click **Download Report** for the JSON vulnerability report
 5. The **History** tab shows your last 50 scans
 
-> Need an API key? A course admin runs `python scripts/00_seed_auth.py --table StudentAuth --add-student <student-id>` and shares the generated key.
 
 ---
 
