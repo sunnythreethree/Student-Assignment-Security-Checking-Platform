@@ -239,9 +239,9 @@ Root-level docs:
 
 ```json
 // Request body
-{ "code": "<source code>", "language": "python" }
+{ "code": "<source code>", "language": "java" }
 
-// Supported languages: python, java, javascript, typescript, go, ruby, c, cpp
+// Supported languages: java, javascript, typescript, go, ruby, python
 ```
 
 ```json
@@ -260,7 +260,7 @@ Errors: `400` invalid input · `401` bad key · `429` rate limit exceeded
 {
   "scan_id": "scan-a1b2c3d4",
   "status": "PENDING",
-  "language": "python",
+  "language": "Java",
   "created_at": "2025-01-01T12:00:00+00:00",
   "retry_after_seconds": 5,
   "scan_expires_at": "2025-01-01T13:00:00+00:00"
@@ -272,7 +272,7 @@ Errors: `400` invalid input · `401` bad key · `429` rate limit exceeded
 {
   "scan_id": "scan-a1b2c3d4",
   "status": "DONE",
-  "language": "python",
+  "language": "Java",
   "vuln_count": 3,
   "completed_at": "2025-01-01T12:01:30+00:00",
   "report_url": "https://s3.amazonaws.com/...presigned...",
