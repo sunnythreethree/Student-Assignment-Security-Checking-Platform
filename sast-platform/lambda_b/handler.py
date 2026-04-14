@@ -207,7 +207,7 @@ def process_scan_request(scan_id: str, language: str, student_id: str,
                 return {"success": True, "scan_id": scan_id, "skipped": True}
             raise
 
-        # Non-Python languages (Java, JS, TS, Go, Ruby, C, C++) can use Semgrep.
+        # Non-Python languages (Java, JS, TS, Go, Ruby) can use Semgrep.
         # Route to ECS Fargate only when ECS is configured (VPC deployment).
         # When ECS is not configured, semgrep runs directly inside Lambda
         # (semgrep is bundled in requirements.txt and invoked via python -m semgrep).

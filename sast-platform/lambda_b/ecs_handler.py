@@ -41,7 +41,7 @@ def _fetch_code(s3_bucket_name: str) -> str:
 
     Priority:
     1. S3_CODE_KEY env var — code was uploaded to S3 (S3-staging path, issue #14).
-       Preferred for large submissions because env vars are limited to ~32 KB.
+       Preferred for large submissions because ECS container env var overrides are capped at ~8 KB.
     2. CODE_CONTENT env var — code passed inline (legacy / small submissions).
     """
     s3_code_key = os.environ.get("S3_CODE_KEY")
