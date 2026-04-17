@@ -26,39 +26,7 @@ http://sast-platform-frontend-dev-891377348481.s3-website-us-east-1.amazonaws.co
 
 ## Architecture
 
-```
-Browser
-  │
-  ├─ POST /scan ──────────────────────────────────────────────►  Lambda A
-  │                                                               (Function URL)
-  │                                                     validate → dispatcher
-  │                                                                    │
-  │                                                             ┌──────┴──────┐
-  │                                                          S3 upload     SQS Queue
-  │                                                         (code blob)        │
-  │                                                                            ▼
-  │                                                                        Lambda B
-  │                                                                        scanner.py / scanner.js
-  │                                                                             │
-  │                                                              ┌──────────────┴──────────────┐
-  │                                                         (small files)              (large files)
-  │                                                              │                              │
-  │                                                        Bandit / Semgrep          ECS Fargate task
-  │                                                        (in Lambda)               (Docker container)
-  │                                                              │                              │
-  │                                                              └──────────────┬──────────────┘
-  │                                                                             │
-  │                                                                    ┌────────┴────────┐
-  │                                                                    S3                DynamoDB
-  │                                                              reports/              ScanResults
-  │                                                          {scan_id}.json
-  │
-  ├─ GET /status?scan_id=xxx ──────────────────────────────────►  Lambda A
-  │                                                               → presigned S3 URL
-  │
-  └─ GET /history ─────────────────────────────────────────────►  Lambda A
-                                                                  → last 50 scans
-```
+![System Architecture](./architecture.svg)
 
 **Scan status lifecycle:**
 ```
